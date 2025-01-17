@@ -16,3 +16,8 @@ The presets are approximations of the following:
 Add PureData patch commit
 
 After numerous weeks of 'chatting' with ChatGPT, I decided to start building a PureData patch by hand. Thanks to some great tutorials by QGCInteractiveMusic, SoundSimulator and Simon Hutchinson, I was able to get this patch to the state it is in now. This patch has not received any real-world testing as yet.
+
+# TODO
+
+* Add links to reference documentation
+* Perform real-world testing
