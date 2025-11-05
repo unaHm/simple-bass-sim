@@ -4,9 +4,128 @@ import threading
 import json
 import os.path
 from flask import Flask, render_template_string, request, flash, redirect, url_for, jsonify, session 
+from flask_socketio import SocketIO
 import math
 import sys
 import numba as nb
+
+# Sources:
+# https://majormixing.com/how-to-set-compressor-attack-release-times-your-complete-guide/
+
+# =========================================================================
+# 🚀 USAGE GUIDE
+# =========================================================================
+#
+# This application is a real-time bass guitar simulator combining Digital
+# Waveguide Synthesis (DWS) with a full suite of post-processing effects
+# and a live, responsive Web UI.
+#
+# -------------------------------------------------------------------------
+# 1. PREREQUISITES (SETUP)
+# -------------------------------------------------------------------------
+# Ensure you have the required Python packages and a running **JACK Audio 
+# Connection Kit** server.
+#
+# # Install Python Dependencies (Use a virtual environment like '.venv')
+# pip install jack-client numpy flask flask-socketio numba
+#
+# -------------------------------------------------------------------------
+# 2. EXECUTION
+# -------------------------------------------------------------------------
+# Run the script directly from your terminal:
+#
+# python your_script_name.py
+#
+# Upon successful execution, the console will display the following messages:
+#
+# JACK client activated. Connect ports using QjackCtl.
+# Access the web UI at http://<Your_Pi_IP_Address>:5000
+#
+# -------------------------------------------------------------------------
+# 3. AUDIO CONNECTION (JACK)
+# -------------------------------------------------------------------------
+# Use a JACK control utility (like **QjackCtl**) to route the audio:
+#
+# - **Input:** Connect your audio input source (e.g., your sound card's 
+#   microphone/line input) to the 6 input ports of the running JACK application 
+#   client. The simulator expects a trigger pulse for each string.
+#
+# - **Output:** Connect the two stereo output ports (`output_1`, `output_2`) 
+#   of the JACK application client to your sound card's playback ports 
+#   (e.g., `system:playback_1`, `system:playback_2`).
+#
+# -------------------------------------------------------------------------
+# 4. WEB UI ACCESS
+# -------------------------------------------------------------------------
+# Open a web browser on your local network and navigate to the displayed address:
+#
+# - **Access:** `http://<Your_Pi_IP_Address>:5000` (If running locally, 
+#   use `http://127.0.0.1:5000`).
+#
+# The UI provides **real-time control** over all string parameters, pickup 
+# configuration, and the four post-processing effects. All slider and checkbox 
+# changes are applied instantly via AJAX/WebSockets without requiring a page refresh.
+#
+# - **Real-Time Feedback:** The **Level Meter** and **Gain Reduction (GR)** #   meters update 30 times per second, providing crucial visual feedback for 
+#   tuning the compressor and limiter thresholds.
+#
+# =========================================================================
+# DSP ALGORITHM SOURCES & THEORY
+# =========================================================================
+
+# 1. String Synthesis (The Core Sound Engine)
+#    - Algorithm: **Karplus-Strong Synthesis**
+#    - Foundation: Digital Waveguide Synthesis (DWS). The simulation uses a 
+#      **Feedback Comb Filter** (Karplus-Strong) to model the initial tone and 
+#      **Low-Pass Filtering** to model damping/decay.
+#    - Reference: Smith, Julius O. "Physical Modeling using Digital Waveguides." 
+#      (Stanford University / CCRMA). Provides the definitive framework for 
+#      DWS and its application to string and instrument modeling.
+
+# 2. Pickups and Tone
+#    - Concept: Modeling magnetic pickups as a **differentiating filter** (high-pass 
+#      slope) and tone knobs as standard **first-order low-pass filters**.
+#    - Reference: Abel, J. S., & Smith, J. O. (1999). "The Phasing of Strings and 
+#      Pickups." Modeling of pickup position as sum of delays.
+
+# 3. Effects: Envelope Filter
+#    - Algorithm: **State Variable Filter (SVF)** controlled by an **Envelope Follower**.
+#      The SVF is typically implemented using the Tustin (Bilinear) Transform.
+#    - Reference: Dattorro, J. (1997). "Implementation of the Digital Waveguide 
+#      Model for String Instruments." Details digital filter structures like SVF.
+
+# 4. Effects: Compressor / Limiter
+#    - Algorithm: **Feed-forward topology** utilizing an **Envelope Follower** #      for side-chain detection and gain smoothing.
+#    - Reference: Zölzer, U. (2011). "DAFX: Digital Audio Effects." Chapters on 
+#      Dynamics Processing detail the math for gain computation (ratio, threshold) 
+#      and time constant implementation (attack/release smoothing).
+
+# 5. Effects: Octaver (Simplified Sub-Octave)
+#    - Algorithm: A **Half-Wave Rectifier** combined with **resampling/interpolation** #      to create a signal at half the fundamental frequency. (More complex versions 
+#      use pitch detection/shifting.)
+#    - Reference: General DSP techniques for frequency division (e.g., fractional 
+#      delay and downsampling).
+
+# 6. Performance Optimization
+#    - Technique: **Numba** for **Just-In-Time (JIT) compilation** into machine code 
+#      and use of **NumPy** for vectorized operations within the real-time audio thread.
+#    - Reference: Numba Documentation (for `@numba.njit(fastmath=True, cache=True)` 
+#      usage and array passing conventions).
+
+# =========================================================================
+# WEB & NETWORKING SOURCES
+# =========================================================================
+
+# 7. Web UI & Control
+#    - Frameworks: **Flask** (Python web microframework) and **Jinja2** (templating).
+#    - Communication: **AJAX (Asynchronous JavaScript and XML/JSON)** used for 
+#      instant parameter updates without page reloads.
+
+# 8. Real-Time Metering
+#    - Technique: **WebSockets** via **Flask-SocketIO** for bi-directional, low-latency 
+#      communication, enabling the real-time level and gain reduction meters.
+#    - Reference: Flask-SocketIO Documentation (for server and client implementation 
+#      of real-time data streaming).
 
 # --- Configuration File Path (Omitted for brevity) ---
 CONFIG_FILE = 'pickup_config.json'
@@ -69,6 +188,14 @@ COMP_RELEASE_MS = 100.0
 
 LIMITER_THRESHOLD = -0.5  # dB (Final output protection)
 LIMITER_RELEASE_MS = 50.0
+
+# New Global variable to store the latest peak level
+LAST_PEAK_DB = -120.0
+
+# New Global variables to store the maximum gain reduction in dB
+LAST_COMP_GR_DB = 0.0  # Gain Reduction is non-positive (0.0 means no reduction)
+LAST_LIMITER_GR_DB = 0.0
+DB_TO_AMP = lambda db: 10.0**(db / 20.0)
 
 params_lock = threading.Lock()
 update_event = threading.Event()
@@ -349,10 +476,13 @@ def process_effects_numba(
     oct_dry_vol, oct_sub_vol, oct_state_l, oct_state_r, # oct_state_l/r would hold the fractional delay line/buffer
     
     # Compressor Params
-    comp_env_alpha_atk, comp_env_alpha_rel, comp_threshold, comp_ratio_inv, comp_makeup_gain, comp_env_state,
+    comp_env_alpha_atk, comp_env_alpha_rel, comp_threshold_amp, comp_ratio_inv, comp_makeup_gain, comp_env_state,
 
     # Limiter Params (Always active)
-    lim_threshold, lim_release_alpha, lim_gain_state
+    lim_threshold, lim_release_alpha, lim_gain_state,
+    
+    comp_gr_max_state,   # New: Array for Compressor Max GR output
+    lim_gr_max_state     # New: Array for Limiter Max GR output
 ):
     # This loop runs the entire effects chain for one block, sample-by-sample, in Numba-compiled code.
     
@@ -365,9 +495,12 @@ def process_effects_numba(
     # Compressor/Limiter: Envelope state is a scalar in a 1-element array
     comp_envelope = comp_env_state[0]
     lim_gain = lim_gain_state[0]
+    
+    max_comp_gr_amp = 1.0 # Max gain (closest to 1.0)
+    max_lim_gr_amp = 1.0
 
     # Constants
-    DB_TO_AMP = 10.0**(comp_threshold / 20.0)
+    #DB_TO_AMP = 10.0**(comp_threshold / 20.0)
     
     for n in range(frames):
         sample_l = input_l[n]
@@ -434,17 +567,25 @@ def process_effects_numba(
 
             # Gain Calculation (Above threshold)
             gain = 1.0
-            if comp_envelope > DB_TO_AMP:
+            if comp_envelope > comp_threshold_amp:
                 # Compression = (Input - Threshold) * (1 - 1/Ratio)
                 # Apply gain reduction: 10^( (threshold - level) * (1 - 1/ratio) / 20)
                 level_db = 20.0 * np.log10(comp_envelope)
-                gain_db = (level_db - comp_threshold) * comp_ratio_inv
+                gain_db = (level_db - comp_threshold_amp) * comp_ratio_inv
                 gain = 10.0**(-gain_db / 20.0)
             
             output_l *= gain
             output_r *= gain
             
             # Apply fixed make-up gain (optional: comp_makeup_gain)
+            
+            # TRACKING COMPRESSOR GAIN REDUCTION
+            # The 'gain' is a linear amplitude value (0.0 to 1.0)
+            if gain < max_comp_gr_amp:
+                max_comp_gr_amp = gain # Store the most extreme (smallest) gain
+
+            output_l *= gain
+            output_r *= gain
             
         # --- 4. Final Limiter (Always ON) ---
         
@@ -456,6 +597,11 @@ def process_effects_numba(
         if peak > lim_threshold:
             # If peak exceeds threshold, the target gain is threshold / peak
             target_gain = lim_threshold / peak
+            
+        # TRACKING LIMITER GAIN REDUCTION
+        # The 'lim_gain' is the instantaneous linear gain value
+        if lim_gain < max_lim_gr_amp:
+            max_lim_gr_amp = lim_gain # Store the most extreme (smallest) gain
             
         # Smooth the gain reduction (attack: instant, release: smoothed)
         if target_gain < lim_gain: # If we need to compress more (instant attack)
@@ -470,6 +616,10 @@ def process_effects_numba(
     # Update state variables (Envelope and Gain)
     comp_env_state[0] = comp_envelope
     lim_gain_state[0] = lim_gain
+    
+    # *** NEW: Write the Max Gain Reduction values back to the output arrays ***
+    comp_gr_max_state[0] = 20.0 * np.log10(max_comp_gr_amp) if max_comp_gr_amp < 1.0 else 0.0
+    lim_gr_max_state[0] = 20.0 * np.log10(max_lim_gr_amp) if max_lim_gr_amp < 1.0 else 0.0
     
     return 0
 
@@ -581,6 +731,10 @@ def process_audio_callback(frames, inports, outports):
     
     ONE_THIRD = 1.0 / 3.0
     HALF = 0.5
+    
+    max_abs_l = np.max(np.abs(stereo_out_L))
+    max_abs_r = np.max(np.abs(stereo_out_R))
+    overall_peak = max(max_abs_l, max_abs_r)
 
     for i in range(6): 
         input_channel = inputs[i]
@@ -639,6 +793,14 @@ def process_audio_callback(frames, inports, outports):
     eff_comp = EFFECT_INSTANCES['comp']
     eff_lim = EFFECT_INSTANCES['limiter']
     
+    # --- NEW: Create temporary GR state arrays ---
+    comp_gr_state = np.array([0.0], dtype=np.float32)
+    lim_gr_state = np.array([0.0], dtype=np.float32)
+    
+    # *** NEW: Calculate Compressor Threshold in Amplitude ***
+    # This must be done outside the Numba function using the Python helper
+    comp_threshold_amp = DB_TO_AMP(eff_comp.threshold)
+    
     # --- NEW: Run the Numba Effects Pipeline ---
     process_effects_numba(
         frames, 
@@ -654,21 +816,61 @@ def process_audio_callback(frames, inports, outports):
         # Octaver Args 
         OCTAVER_DRY_VOL, OCTAVER_OCTAVE_VOL, 
         eff_oct.state_l, eff_oct.state_r,
-        # Compressor Args 
+        # *** COMPRESSOR ARGS: Pass the pre-calculated AMP threshold ***
         eff_comp.env_follower.alpha_atk, eff_comp.env_follower.alpha_rel, 
-        DB_TO_AMP(eff_comp.threshold), eff_comp.ratio_inv, 1.0, # Threshold in AMP, Ratio Inv, Makeup gain=1.0 (for simplicity)
+        comp_threshold_amp, # <-- NOW PASSING THE FLOAT VALUE
+        eff_comp.ratio_inv, 1.0, # ratio inv and makeup gain
         eff_comp.env_follower.envelope_state,
         # Limiter Args 
         eff_lim.threshold_amp, eff_lim.release_alpha, 
-        eff_lim.gain_state
+        eff_lim.gain_state,
+        comp_gr_state, 
+        lim_gr_state
     )
+
+    # Lock for writing the shared variable
+    with params_lock:
+        global LAST_PEAK_DB
+    
+    # Convert amplitude to Decibels (dB)
+        if overall_peak > 0:
+            LAST_PEAK_DB = 20.0 * np.log10(overall_peak)
+        else:
+            LAST_PEAK_DB = -120.0 # Represent silence as a very low dB value
+    
+    LAST_COMP_GR_DB = comp_gr_state[0]
+    LAST_LIMITER_GR_DB = lim_gr_state[0]
 
     # Output ports already point to the (now-processed) stereo_out_L/R arrays.
     return 0
+    
+# Helper to send the data over the network
+def emit_peak_level():
+    global LAST_COMP_GR_DB, LAST_LIMITER_GR_DB, LAST_PEAK_DB
+    with params_lock:
+        data_to_send = {
+            'level' : LAST_PEAK_DB,
+            'comp_gr': LAST_COMP_GR_DB,
+            'lim_gr': LAST_LIMITER_GR_DB
+        }
+    # Send data on the 'level_update' channel
+    socketio.emit('level_update', data_to_send)
+
+# Function to run periodically (approx 30 Hz)
+def start_level_meter_thread():
+    # Schedule the next run
+    threading.Timer(0.033, start_level_meter_thread).start() 
+
+    try:
+        emit_peak_level()
+    except RuntimeError:
+        # Ignore errors if the Flask app is shutting down
+        pass
+        
 # --- Web Interface (Flask) and API Endpoints (Omitted for brevity) ---
 app = Flask(__name__)
 app.secret_key = b'_5#y2L"F4Q8z\n\xec]/' 
-
+socketio = SocketIO(app, cors_allowed_origins="*") # '*' allows connection from any source (safe for local host)
 @app.route('/api/update_physical', methods=['POST'])
 def api_update_physical():
     data = request.json
@@ -733,11 +935,18 @@ def api_update_effects():
         if 'comp_bypass' in data:
             EFFECTS_BYPASS['comp'] = data['comp_bypass']
             
-        # Update parameters (example: Compressor threshold)
-        if 'comp_threshold' in data:
-            global COMP_THRESHOLD
-            COMP_THRESHOLD = float(data['comp_threshold'])
+        if 'comp_ratio' in data:
+            global COMP_RATIO
+            COMP_RATIO = float(data['comp_ratio'])
+            # You'll also need to update the instance value for the Numba call
+            EFFECT_INSTANCES['comp'].ratio_inv = 1.0 / COMP_RATIO
             
+        if 'env_filter_freq' in data:
+            global ENV_FILTER_FREQ
+            ENV_FILTER_FREQ = float(data['env_filter_freq'])
+            # Crucial: Update the SVF coefficients on the instance!
+            EFFECT_INSTANCES['env_filter'].svf_l.update_coefficients(ENV_FILTER_FREQ, ENV_FILTER_Q)
+            EFFECT_INSTANCES['env_filter'].svf_r.update_coefficients(ENV_FILTER_FREQ, ENV_FILTER_Q)
     # The JACK thread will use the updated global variables instantly
     return jsonify({'status': 'ok', 'message': 'Effects state updated.'})
 
@@ -1028,6 +1237,7 @@ HTML_FORM = """
             color: var(--color-text-light); 
         }
     </style>
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
     // Helper function for AJAX POST requests
     function sendUpdate(endpoint, data) {
@@ -1115,6 +1325,21 @@ HTML_FORM = """
         updateVirtualParams();
     }
 
+    function syncCompRatio(sourceInput) {
+        const slider = document.getElementsByName('comp_ratio_slider')[0];
+        const numberInput = document.getElementsByName('comp_ratio_num')[0];
+
+        // Sync values between slider (15-200 for 1.5-20.0) and number input
+        if (sourceInput.type === 'range') {
+            // Example: map 15-200 slider value to 1.5-20.0 number
+            numberInput.value = (sourceInput.value / 10).toFixed(1); 
+        } else {
+            slider.value = parseFloat(sourceInput.value) * 10;
+        }
+    
+        // Send API Update
+        sendEffectUpdate('comp_ratio', parseFloat(numberInput.value));
+    }
 
     function toggleP2Enable(checkbox) {
         const isChecked = checkbox.checked;
@@ -1188,6 +1413,56 @@ HTML_FORM = """
         sendEffectUpdate('comp_threshold', parseFloat(numberInput.value));
     }
     // You would create similar sync functions for other effect parameters (Q, Ratio, etc.)
+    // NEW: Real-Time Level Meter Listener
+    const socket = io(); // Connects to the host the page was served from
+
+    socket.on('level_update', function(data) {
+        const levelDB = data.level;
+        const compGR = data.comp_gr;
+        const limGR = data.lim_gr;
+        const reductionAmount = -grDB;
+        const meterBar = document.getElementById('level-bar');
+        const dbReadout = document.getElementById('level-db-readout');
+
+        // Update numerical readout
+        dbReadout.textContent = levelDB > -120 ? levelDB.toFixed(1) + " dB" : "-INF dB";
+        grReadout.textContent = reductionAmount.toFixed(1) + " dB";
+
+        // Map the dB level to a meter width percentage
+        // Use -60 dB as the 'silent' floor (0%) and 0 dB as 100%
+        const MIN_DB = -60.0;
+        const MAX_DB = 0.0;
+        const MAX_GR = 20.0;
+        
+        let percentage = (levelDB - MIN_DB) / (MAX_DB - MIN_DB) * 100;
+
+        // Clamp the percentage to ensure it stays between 0% and 100%
+        if (percentage < 0) percentage = 0;
+        if (percentage > 100) percentage = 100;
+
+        let gr_percentage = (reductionAmount / MAX_GR) * 100;
+    
+            if (gr_percentage < 0) gr_percentage = 0;
+            if (gr_percentage > 100) gr_percentage = 100;
+
+            grBar.style.width = gr_percentage.toFixed(0) + '%';
+        }
+
+        // Set bar color based on level (optional, but professional)
+        let color = 'limegreen';
+        if (levelDB > -6.0) { // Yellow warning zone
+            color = 'yellow';
+        }
+        if (levelDB > -1.0) { // Red clipping warning zone (or close to it)
+            color = 'red';
+        }
+
+        // Update the meter visualization
+        meterBar.style.width = percentage.toFixed(0) + '%';
+        meterBar.style.backgroundColor = color;
+        updateGRMeter(compGR, 'comp-gr-bar', 'comp-gr-readout');
+        updateGRMeter(limGR, 'lim-gr-bar', 'lim-gr-readout');
+    });
 </script>
 </head>
 <body>
@@ -1202,7 +1477,16 @@ HTML_FORM = """
     {% endwith %}
 
     <h2>🎸 Bass Guitar DSP Config</h2>
-
+    <details open>
+      <summary><h2>5. Real-Time Output</h2></summary>
+      <fieldset>
+          <legend>Master Level Meter</legend>
+            <div style="width: 250px; background-color: #333; height: 20px; border-radius: 5px; overflow: hidden; margin-bottom: 5px;">
+             <div id="level-bar" style="height: 100%; width: 0%; background-color: limegreen; transition: width 0.05s ease;"></div>
+            </div>
+         <span id="level-db-readout">-INF dB</span>
+      </fieldset>
+    </details>
     <form method="POST">
         <h3>Virtual Pickup Presets</h3>
         <label for="preset_select">Select Virtual Preset:</label>
@@ -1325,11 +1609,25 @@ HTML_FORM = """
         <input type="range" min="-60" max="0" step="1" name="comp_threshold_slider" 
                oninput="syncCompThreshold(this)" value="{{ COMP_THRESHOLD }}">
         <input type="number" min="-60" max="0" step="0.1" name="comp_threshold_num" value="{{ COMP_THRESHOLD }}" readonly>
-        </fieldset>
-    
+<div style="margin-top: 5px;">
+            <label>Gain Reduction:</label>
+            <div style="width: 250px; background-color: #555; height: 10px; border-radius: 2px; overflow: hidden;">
+            <div id="comp-gr-bar" style="height: 100%; width: 0%; background-color: orange; transition: width 0.05s ease;"></div>
+        </div>
+        <span id="comp-gr-readout">0.0 dB</span>
+    </div>
+    </fieldset>
+        
     <fieldset>
         <legend>Limiter (Always ON)</legend>
         <p>Threshold: {{ LIMITER_THRESHOLD }} dB</p>
+        <div style="margin-top: 5px;">
+        <label>Gain Reduction:</label>
+            <div style="width: 250px; background-color: #555; height: 10px; border-radius: 2px; overflow: hidden;">
+            <div id="lim-gr-bar" style="height: 100%; width: 0%; background-color: red; transition: width 0.05s ease;"></div>
+            </div>
+            <span id="lim-gr-readout">0.0 dB</span>
+        </div>
         </fieldset>
 
 </details>
@@ -1373,7 +1671,9 @@ if __name__ == "__main__":
         with client:
             print("JACK client activated. Connect ports using QjackCtl.")
             print(f"Access the web UI at http://<Your_Pi_IP_Address>:5000")
+            start_level_meter_thread()
             app.run(host='0.0.0.0', port=5000, debug=False) 
+            socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
     except jack.JackError as e:
         print(f"JACK error: {e}")
         print("Ensure JACK server is running (e.g., via qjackctl) before running this script.")
