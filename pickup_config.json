@@ -1,0 +1,14 @@
+{
+    "REAL_PICKUP_DISTS_FB": [
+        15.0,
+        15.0,
+        15.0,
+        15.0,
+        15.0,
+        15.0
+    ],
+    "SHARED_LENGTH": 863.6,
+    "PICKUP1_VOL": 1.0,
+    "PICKUP2_VOL": 1.0,
+    "MASTER_TONE": 10000.0
+}
