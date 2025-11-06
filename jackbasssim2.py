@@ -1052,7 +1052,7 @@ HTML_FORM = """
     --bg-dark: #121212;
     --bg-light: #1e1e1e;
     --text-primary: #f0f0f0;
-    --accent-color: #AA77CC;
+    --accent-color: #DBA367;
     --border-dark: #555;
     --meter-peak: #FF4500;
     --meter-level: #00FF00;
@@ -1233,6 +1233,65 @@ th, td {
         max-width: none;
     }
 }
+/* 🚀 USER REQUEST: Latching Push Button Styling for Checkboxes */
+
+/* 1. Hide the actual checkbox input */
+.latching-button-label + input[type="checkbox"] {
+    /* Standard method to visually hide the input but keep it accessible/functional */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+/* 2. Style the Label (The visible Button) */
+.latching-button-label {
+    display: inline-block; /* Allows width/padding control */
+    min-width: 80px; /* Ensure enough space for "Bypass" or other text */
+    text-align: center;
+    padding: 6px 10px;
+    margin-right: 10px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: bold;
+    border-radius: 4px;
+    
+    /* OFF State (Unchecked) */
+    background-color: var(--bg-dark); 
+    color: var(--text-primary); 
+    border: 2px solid var(--border-dark);
+    box-shadow: 0 4px #000; /* Subtle 3D effect */
+    transition: all 0.3s ease-in-out;
+}
+/* 3. Define the ON/LATCHED State (Glow Effect) */
+.latching-button-label:has(+ input[type="checkbox"]:checked) {
+    /* ON State (Checked) */
+    background-color: var(--accent-color); 
+    color: var(--bg-dark);
+    border-color: var(--accent-color);
+    transition: all 0.3s ease-in-out;
+    
+    /* 🚀 NEW: Glow Effect (Replaces movement/shadow change) */
+    box-shadow: 0 0 10px var(--accent-color); 
+    transform: none; /* Ensure no movement */
+}
+
+/* 4. Define the Hover/Active State */
+.latching-button-label:hover {
+    filter: brightness(1.2);
+}
+
+/* Apply press style on active click (for both ON and OFF states) */
+.latching-button-label:active {
+    /* 🚀 NEW: Button press now looks slightly indented without movement */
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5); 
+    transform: none;
+}
 </style>
 </head>
 <body>
@@ -1257,9 +1316,8 @@ th, td {
     </div>
     
     <form id="control_form">
-    
+        <h2>Preset Manager</h2>
         <details open>
-            <summary><h2>Preset Manager</h2></summary>
             <fieldset>
                 <legend>Load Preset</legend>
                 <select id="preset_select_load">
@@ -1276,9 +1334,7 @@ th, td {
                 <button type="button" onclick="savePreset()">Save</button>
             </fieldset>
         </details>
-
-        <details open>
-            <summary><h2>Virtual Pickup Presets</h2></summary>
+        <h2>Virtual Pickup Presets</h2>
             <fieldset>
                 <legend>Select Preset</legend>
                 <select name="preset_select" onchange="updatePreset(this.value)">
@@ -1289,7 +1345,7 @@ th, td {
                     {% endfor %}
                 </select>
             </fieldset>
-
+            <details>
             <fieldset>
                 <legend>String Parameters (Virtual Distances)</legend>
                 <table>
@@ -1314,9 +1370,8 @@ th, td {
                 </table>
             </fieldset>
         </details>
-        
+        <h2>Pickup & Tone Controls</h2>
         <details open>
-            <summary><h2>Pickup & Tone Controls</h2></summary>
             <fieldset>
                 <legend>Pickup Models</legend>
                 <div class="flex-row">
@@ -1340,8 +1395,10 @@ th, td {
                             {% endfor %}
                         </select></label>
                         <label class="checkbox-label">
-                            <input type="checkbox" name="pickup2_enabled" id="pickup2_enabled" {{ 'checked' if pickup2_enabled else '' }} onchange="updatePickupEnable(this.checked)"> Enable Pickup 2
+                            <label for="pickup2_enabled" class="latching-button-label">Enable</label>
+                            <input type="checkbox" name="pickup2_enabled" id="pickup2_enabled" {{ 'checked' if pickup2_enabled else '' }} onchange="updatePickupEnable(this.checked)">
                         </label>
+                        
                     </div>
                 </div>
             </fieldset>
@@ -1364,14 +1421,13 @@ th, td {
                 </div>
             </fieldset>
         </details>
-       
+        <h2>Global Effects Rack</h2>
         <details open>
-            <summary><h2>Global Effects Rack</h2></summary>
-            <div class="effect-controls">
-                
+            <div class="effect-controls">          
                 <fieldset>
                     <legend>Envelope Filter 
-                        <label class="checkbox-label"><input type="checkbox" id="env_filter_bypass" {{ 'checked' if effects_bypass.env_filter else '' }} onchange="toggleBypass('env_filter', this.checked)"> Bypass</label>
+                        <label for="env_filter_bypass" class="latching-button-label">Bypass</label>
+                        <input type="checkbox" id="env_filter_bypass" name="env_filter_bypass" {{ 'checked' if effects_bypass.env_filter else '' }} onchange="toggleBypass('env_filter', this.checked)">
                     </legend>
                     <label for="env_filter_freq">Center Freq (Hz): <span id="env_filter_freq_display">{{ env_filter_freq | round(0) }}</span></label>
                     <input type="range" min="50" max="1000" step="1" id="env_filter_freq" name="env_filter_freq" value="{{ env_filter_freq }}" oninput="syncEnvFilterFreq(this)">
@@ -1385,7 +1441,8 @@ th, td {
                 
                 <fieldset>
                     <legend>Octaver (Sub-Octave)
-                        <label class="checkbox-label"><input type="checkbox" id="octaver_bypass" {{ 'checked' if effects_bypass.octaver else '' }} onchange="toggleBypass('octaver', this.checked)"> Bypass</label>
+                        <label for="octaver_bypass" class="latching-button-label">Bypass</label>
+                        <input type="checkbox" id="octaver_bypass" name="octaver_bypass" {{ 'checked' if effects_bypass.octaver else '' }} onchange="toggleBypass('octaver', this.checked)">
                     </legend>
                     <label for="octaver_octave_vol">Sub-Octave Volume: <span id="octaver_octave_vol_display">{{ octaver_octave_vol | round(2) }}</span></label>
                     <input type="range" min="0" max="1" step="0.1" id="octaver_octave_vol" name="octaver_octave_vol" value="{{ octaver_octave_vol }}" oninput="syncOctaverOctaveVol(this)">
@@ -1396,7 +1453,8 @@ th, td {
 
                 <fieldset>
                     <legend>Compressor/Limiter 
-                        <label class="checkbox-label"><input type="checkbox" id="comp_bypass" {{ 'checked' if effects_bypass.comp else '' }} onchange="toggleBypass('comp', this.checked)"> Bypass</label>
+                        <label for="comp_bypass" class="latching-button-label">Bypass</label>
+                        <input type="checkbox" id="comp_bypass" name="comp_bypass" {{ 'checked' if effects_bypass.comp else '' }} onchange="toggleBypass('comp', this.checked)">
                     </legend>
                     
                     <div class="flex-row" style="justify-content: space-between;">
@@ -1424,9 +1482,8 @@ th, td {
                 </fieldset>
             </div>
         </details>
-
+        <h2>Physical Parameters (Global)</h2>
         <details>
-            <summary><h2>Physical Parameters (Global)</h2></summary>
             <fieldset>
                 <legend>String and Pickup Physics</legend>
                 <div class="flex-row">
