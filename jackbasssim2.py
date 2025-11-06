@@ -1047,19 +1047,22 @@ HTML_FORM = """
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400..900&display=swap" rel="stylesheet">
     <style>
-/* 🚀 FIX: Enforce Orbitron font globally and remove specific monospace overrides */
+/* 🚀 USER REQUEST: Responsive Design (Mobile-First) & Font Resize */
 :root {
-    --bg-dark: #121212;       /* Deep dark background */
-    --bg-light: #1e1e1e;      /* Slightly lighter background for fields */
-    --text-primary: #f0f0f0;  /* Bright white/light gray text */
-    --accent-color: #00FFFF;  /* Bright Cyan for highlights */
-    --border-dark: #555;      /* Medium gray border */
-    --meter-peak: #FF4500;    /* Red-Orange for clipping/limit */
-    --meter-level: #00FF00;   /* Bright Green for signal */
-    --meter-gr: #FFD700;      /* Gold for gain reduction */
+    --bg-dark: #121212;
+    --bg-light: #1e1e1e;
+    --text-primary: #f0f0f0;
+    --accent-color: #AA77CC;
+    --border-dark: #555;
+    --meter-peak: #FF4500;
+    --meter-level: #00FF00;
+    --meter-gr: #FFD700;
+    
+    /* Responsive Font Sizing */
+    font-size: 32px; /* Base font size */
 }
 
-/* --- FIX: Target all key elements to ensure Orbitron is used --- */
+/* Enforce Orbitron font globally */
 body, 
 input, 
 button, 
@@ -1069,144 +1072,166 @@ table,
 th, 
 td,
 .meter-container {
-    font-family: 'Orbitron', monospace, sans-serif; /* Enforce Orbitron */
-    margin: 0; /* Adjusted margin here for body, spacing handled by children */
-    background-color: var(--bg-dark);
+    font-family: 'Orbitron', monospace, sans-serif;
     color: var(--text-primary);
 }
-/* ----------------------------------------------------------------- */
 
 body {
-    padding: 20px; /* Add body padding back */
+    margin: 0; 
+    padding: 10px; /* Reduced padding for mobile */
+    background-color: var(--bg-dark);
+    line-height: 1.4;
+}
+
+/* Base Styles (Optimized for both small and large screens) */
+form {
+    padding: 0;
 }
 
 form > * {
-    margin-bottom: 20px;
+    margin-bottom: 15px; /* Slightly reduced margin */
     padding: 10px;
     border: 1px solid var(--border-dark);
     background-color: var(--bg-light);
     border-radius: 4px; 
-    box-shadow: 0 0 5px rgba(0, 255, 255, 0.1); /* Subtle cyan glow */
+    box-shadow: 0 0 5px rgba(0, 255, 255, 0.1);
 }
+
 fieldset {
-    border: 2px solid var(--accent-color); /* Highlight fieldsets */
-    padding: 15px;
+    border: 2px solid var(--accent-color);
+    padding: 10px; /* Reduced padding */
     margin-top: 15px;
     border-radius: 4px;
     background-color: var(--bg-light);
     box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
 }
+
 legend {
+    font-size: 1.1rem; /* Slightly larger legend */
     font-weight: bold;
     padding: 0 10px;
-    color: var(--accent-color); /* Bright accent color */
-    background-color: var(--bg-dark); /* Contrast behind legend */
+    color: var(--accent-color);
+    background-color: var(--bg-dark);
 }
+
 h2 {
+    font-size: 1.5rem;
     border-bottom: 2px solid var(--accent-color);
     padding-bottom: 5px;
-    margin-top: 30px;
+    margin-top: 20px;
     color: var(--accent-color);
-    font-weight: 700;
-    font-family: Orbitron;
 }
+
 label {
     display: block;
-    margin-top: 10px;
+    margin-top: 5px;
     font-weight: 400; 
+    font-size: 0.9rem; /* Slightly smaller label text */
 }
+
 /* Input Styling */
 input[type="range"] {
-    width: 90%;
+    width: 100%; /* Full width for range on mobile */
     -webkit-appearance: none;
-    height: 10px;
+    height: 20px;
     background: #333;
-    border-radius: 5px;
+    border-radius: 10px;
 }
 input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 15px;
-    height: 15px;
+    width: 40px; /* Bigger touch target for mobile */
+    height: 40px;
     background: var(--accent-color);
     cursor: pointer;
     border-radius: 50%;
     box-shadow: 0 0 8px var(--accent-color);
 }
 input[type="number"], 
-input[type="text"],
-select {
-    width: 100px;
-    padding: 5px;
+input[type="text"] {
+    width: auto; 
+    max-width: 50px; /* Keep constraint for narrow number/text fields */
+    padding: 8px;
     border: 1px solid var(--border-dark);
     border-radius: 2px;
     background-color: #000; 
-    color: var(--text-primary);
-    /* font-family: monospace; <-- Removed this explicit override */
+    font-size: 0.9rem;
+}
+select {
+    width: 100%; /* Full width for dropdowns on all screen sizes */
+    padding: 8px;
+    border: 1px solid var(--border-dark);
+    border-radius: 2px;
+    background-color: #000; 
+    font-size: 1rem;
 }
 button {
+    width: 100%; /* Full width button on mobile */
+    max-width: 400px; /* Max width for desktop/tablet */
+    margin-top: 10px;
     background-color: var(--accent-color);
     color: var(--bg-dark);
     border: none;
-    padding: 8px 15px;
+    padding: 10px;
     border-radius: 2px;
     cursor: pointer;
     font-weight: bold;
     box-shadow: 0 0 5px var(--accent-color);
     transition: background-color 0.1s;
 }
-button:hover {
-    background-color: #008888;
-}
 
 table {
-    width: 100%;
+    width: 20%;
     border-collapse: collapse;
+    font-size: 0.9rem;
 }
 th, td {
+    width: auto;
     border: 1px solid var(--border-dark);
-    padding: 8px;
+    padding: 6px; /* Reduced padding */
     text-align: left;
-}
-th {
-    background-color: #333;
-    color: var(--accent-color);
-    font-weight: 700;
 }
 
 /* Meter Styles */
 .meter-container {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-top: 10px;
-    /* font-family: monospace; <-- Removed this explicit override */
+    gap: 5px; /* Reduced gap */
+    margin-top: 5px;
 }
 .meter {
-    width: 100%;
-    height: 20px;
-    background-color: #000; /* Black background for meter */
+    height: 15px; /* Shorter meter */
     border: 1px solid var(--accent-color);
     border-radius: 2px;
-    overflow: hidden;
-    position: relative;
     box-shadow: inset 0 0 5px var(--accent-color);
 }
-.level-bar {
-    height: 100%;
-    transition: width 0.05s ease-out;
-    background-color: var(--meter-level);
-    box-shadow: 0 0 3px var(--meter-level);
-}
-.gr-bar {
-    height: 100%;
-    transition: width 0.05s ease-out;
-    background-color: var(--meter-gr);
-    /* GR bars move from right to left, so anchor them to the right */
-    position: absolute;
-    right: 0;
-}
-.level-bar.peak {
-    background-color: var(--meter-peak);
+
+/* --------------------------------------------------------------------- */
+/* Desktop/Tablet Optimization (Min-width 600px) */
+/* This media query ensures a better side-by-side layout on larger screens */
+/* --------------------------------------------------------------------- */
+@media (min-width: 600px) {
+    
+    :root {
+        font-size: 32px; 
+    }
+    
+    body {
+        padding: 32px; 
+    }
+
+    input[type="number"], 
+    input[type="text"] {
+        width: auto; /* Compact width for numeric inputs */
+        max-width: 250px;
+    }
+
+    select {
+        width: auto; /* Wider width for dropdowns to show full text */
+        max-width: none;
+    }
+
+    button {
+        width: auto; 
+        max-width: none;
+    }
 }
 </style>
 </head>
@@ -1290,30 +1315,30 @@ th {
             </fieldset>
         </details>
         
-        <details>
+        <details open>
             <summary><h2>Pickup & Tone Controls</h2></summary>
             <fieldset>
                 <legend>Pickup Models</legend>
                 <div class="flex-row">
                     <div class="flex-col">
-                        <label>Pickup 1 Model:</label>
+                        <label>Pickup 1 Model:
                         <select name="pickup1_select" onchange="updatePickupModel('pickup1', this.value)">
                             {% for key, model in pickup_models.items() %}
                                 <option value="{{ key }}" {{ 'selected' if key == selected_pickup1 else '' }}>
                                     {{ model.name }}
                                 </option>
                             {% endfor %}
-                        </select>
+                        </select></label>
                     </div>
                     <div class="flex-col">
-                        <label>Pickup 2 Model:</label>
+                        <label>Pickup 2 Model:
                         <select name="pickup2_select" onchange="updatePickupModel('pickup2', this.value)">
                             {% for key, model in pickup_models.items() %}
                                 <option value="{{ key }}" {{ 'selected' if key == selected_pickup2 else '' }}>
                                     {{ model.name }}
                                 </option>
                             {% endfor %}
-                        </select>
+                        </select></label>
                         <label class="checkbox-label">
                             <input type="checkbox" name="pickup2_enabled" id="pickup2_enabled" {{ 'checked' if pickup2_enabled else '' }} onchange="updatePickupEnable(this.checked)"> Enable Pickup 2
                         </label>
@@ -1326,15 +1351,15 @@ th {
                 <div class="flex-row">
                     <div class="flex-col">
                         <label for="pickup1_vol_slider">Pickup 1 Volume: <span id="pickup1_vol_display">{{ pickup1_vol | round(2) }}</span></label>
-                        <input type="range" min="0" max="1" step="0.01" name="pickup1_vol_slider" value="{{ pickup1_vol }}" oninput="updateMasterControls(this, 'pickup1_vol', 'pickup1_vol_display')">
+                        <input type="range" min="0" max="1" step="0.01" id="pickup1_vol_slider" name="pickup1_vol_slider" value="{{ pickup1_vol }}" oninput="updateMasterControls(this, 'pickup1_vol', 'pickup1_vol_display')">
                     </div>
                     <div class="flex-col">
                         <label for="pickup2_vol_slider">Pickup 2 Volume: <span id="pickup2_vol_display">{{ pickup2_vol | round(2) }}</span></label>
-                        <input type="range" min="0" max="1" step="0.01" name="pickup2_vol_slider" value="{{ pickup2_vol }}" oninput="updateMasterControls(this, 'pickup2_vol', 'pickup2_vol_display')">
+                        <input type="range" min="0" max="1" step="0.01" id="pickup2_vol_slider" name="pickup2_vol_slider" value="{{ pickup2_vol }}" oninput="updateMasterControls(this, 'pickup2_vol', 'pickup2_vol_display')">
                     </div>
                     <div class="flex-col">
                         <label for="master_tone_slider">Master Tone (Low-Pass Cutoff Hz): <span id="master_tone_display">{{ master_tone | round(0) }}</span></label>
-                        <input type="range" min="500" max="12000" step="10" name="master_tone_slider" value="{{ master_tone }}" oninput="updateMasterControls(this, 'master_tone', 'master_tone_display')">
+                        <input type="range" min="500" max="12000" step="10" id="master_tone_slider" name="master_tone_slider" value="{{ master_tone }}" oninput="updateMasterControls(this, 'master_tone', 'master_tone_display')">
                     </div>
                 </div>
             </fieldset>
@@ -1349,13 +1374,13 @@ th {
                         <label class="checkbox-label"><input type="checkbox" id="env_filter_bypass" {{ 'checked' if effects_bypass.env_filter else '' }} onchange="toggleBypass('env_filter', this.checked)"> Bypass</label>
                     </legend>
                     <label for="env_filter_freq">Center Freq (Hz): <span id="env_filter_freq_display">{{ env_filter_freq | round(0) }}</span></label>
-                    <input type="range" min="50" max="1000" step="1" name="env_filter_freq" value="{{ env_filter_freq }}" oninput="syncEnvFilterFreq(this)">
+                    <input type="range" min="50" max="1000" step="1" id="env_filter_freq" name="env_filter_freq" value="{{ env_filter_freq }}" oninput="syncEnvFilterFreq(this)">
                     
                     <label for="env_filter_q">Q/Resonance: <span id="env_filter_q_display">{{ env_filter_q | round(1) }}</span></label>
-                    <input type="range" min="0.5" max="10" step="0.1" name="env_filter_q" value="{{ env_filter_q }}" oninput="syncEnvFilterQ(this)">
+                    <input type="range" min="0.5" max="10" step="0.1" id="env_filter_q" name="env_filter_q" value="{{ env_filter_q }}" oninput="syncEnvFilterQ(this)">
                     
                     <label for="env_filter_mix">Dry/Wet Mix: <span id="env_filter_mix_display">{{ env_filter_mix | round(2) }}</span></label>
-                    <input type="range" min="0" max="1" step="0.01" name="env_filter_mix" value="{{ env_filter_mix }}" oninput="syncEnvFilterMix(this)">
+                    <input type="range" min="0" max="1" step="0.01" id="env_filter_mix" name="env_filter_mix" value="{{ env_filter_mix }}" oninput="syncEnvFilterMix(this)">
                 </fieldset>
                 
                 <fieldset>
@@ -1363,10 +1388,10 @@ th {
                         <label class="checkbox-label"><input type="checkbox" id="octaver_bypass" {{ 'checked' if effects_bypass.octaver else '' }} onchange="toggleBypass('octaver', this.checked)"> Bypass</label>
                     </legend>
                     <label for="octaver_octave_vol">Sub-Octave Volume: <span id="octaver_octave_vol_display">{{ octaver_octave_vol | round(2) }}</span></label>
-                    <input type="range" min="0" max="1" step="0.1" name="octaver_octave_vol" value="{{ octaver_octave_vol }}" oninput="syncOctaverOctaveVol(this)">
+                    <input type="range" min="0" max="1" step="0.1" id="octaver_octave_vol" name="octaver_octave_vol" value="{{ octaver_octave_vol }}" oninput="syncOctaverOctaveVol(this)">
                     
                     <label for="octaver_dry_vol">Dry Signal Volume: <span id="octaver_dry_vol_display">{{ octaver_dry_vol | round(2) }}</span></label>
-                    <input type="range" min="0" max="1" step="0.1" name="octaver_dry_vol" value="{{ octaver_dry_vol }}" oninput="syncOctaverDryVol(this)">
+                    <input type="range" min="0" max="1" step="0.1" id="octaver_dry_vol" name="octaver_dry_vol" value="{{ octaver_dry_vol }}" oninput="syncOctaverDryVol(this)">
                 </fieldset>
 
                 <fieldset>
@@ -1376,23 +1401,23 @@ th {
                     
                     <div class="flex-row" style="justify-content: space-between;">
                         <label for="comp_threshold_slider">Threshold (dB): <span id="comp_threshold_display">{{ comp_threshold | round(1) }}</span></label>
-                        <input type="number" min="-60" max="0" step="0.1" name="comp_threshold_num" value="{{ comp_threshold }}" onchange="syncCompThreshold(this)">
+                        <input type="number" min="-60" max="0" step="0.1" id="comp_threshold_slider" name="comp_threshold_num" value="{{ comp_threshold }}" onchange="syncCompThreshold(this)">
                     </div>
                     <input type="range" min="0" max="100" name="comp_threshold_slider" value="{{ comp_threshold | float | abs }}" oninput="syncCompThreshold(this)"> 
                     
                     <label for="comp_ratio">Ratio: <span id="comp_ratio_display">{{ comp_ratio | round(1) }}</span></label>
-                    <input type="range" min="1.0" max="20.0" step="0.1" name="comp_ratio" value="{{ comp_ratio }}" oninput="syncCompRatio(this)">
+                    <input type="range" min="1.0" max="20.0" step="0.1" id="comp_ratio" name="comp_ratio" value="{{ comp_ratio }}" oninput="syncCompRatio(this)">
 
                     <label for="comp_attack">Attack (ms): <span id="comp_attack_display">{{ comp_attack | round(0) }}</span></label>
-                    <input type="range" min="1" max="500" step="1" name="comp_attack" value="{{ comp_attack }}" oninput="syncCompAttack(this)">
+                    <input type="range" min="1" max="500" step="1" id="comp_attack" name="comp_attack" value="{{ comp_attack }}" oninput="syncCompAttack(this)">
 
                     <label for="comp_release">Release (ms): <span id="comp_release_display">{{ comp_release | round(0) }}</span></label>
-                    <input type="range" min="1" max="2000" step="1" name="comp_release" value="{{ comp_release }}" oninput="syncCompRelease(this)">
+                    <input type="range" min="1" max="2000" step="1" id="comp_release" name="comp_release" value="{{ comp_release }}" oninput="syncCompRelease(this)">
                     
                     <hr>
                     <div class="flex-row" style="justify-content: space-between;">
                         <label for="limiter_threshold_slider">Limiter Threshold (dB): <span id="limiter_threshold_display">{{ limiter_threshold | round(1) }}</span></label>
-                        <input type="number" min="-10" max="0" step="0.1" name="limiter_threshold_num" value="{{ limiter_threshold }}" onchange="syncLimiterThreshold(this)">
+                        <input type="number" min="-10" max="0" step="0.1" id="limiter_threshold_slider" name="limiter_threshold_num" value="{{ limiter_threshold }}" onchange="syncLimiterThreshold(this)">
                     </div>
                     <input type="range" min="0" max="20" name="limiter_threshold_slider" value="{{ limiter_threshold | float | abs * 10 }}" oninput="syncLimiterThreshold(this)"> 
                     
@@ -1460,21 +1485,21 @@ th {
         // --- Real-Time Meter Update ---
         socket.on('meter_data', function(data) {
             // Peak Level Meter
-            const peakDb = data.peak_db;
+            const peakDb = data.peak_db ?? -120.0;
             const peakPercent = dbToPercent(peakDb);
             document.getElementById('peak_db_display').textContent = peakDb.toFixed(1);
             document.getElementById('peak_level_bar').style.width = peakPercent + '%';
 
             // Compressor GR Meter
             // GR is negative (0 to -X). We want to display |GR| and map it to a width.
-            const compGrDb = Math.max(-10, data.comp_gr_db); // Clip at -10dB
-            const compGrPercent = Math.abs(compGrDb) / 10 * 100; // Map 0dB to 0%, -10dB to 100%
+            const compGrDb = Math.max(-10, data.comp_gr_db ?? 0.0);
+            const compGrPercent = Math.abs(compGrDb) / 10 * 100;
             document.getElementById('comp_gr_display').textContent = compGrDb.toFixed(1);
             document.getElementById('comp_gr_bar').style.width = compGrPercent + '%';
             
             // Limiter GR Meter
-            const limiterGrDb = Math.max(-3, data.limiter_gr_db); // Clip at -3dB
-            const limiterGrPercent = Math.abs(limiterGrDb) / 3 * 100; // Map 0dB to 0%, -3dB to 100%
+            const limiterGrDb = Math.max(-3, data.limiter_gr_db ?? 0.0);
+            const limiterGrPercent = Math.abs(limiterGrDb) / 3 * 100;
             document.getElementById('limiter_gr_display').textContent = limiterGrDb.toFixed(1);
             document.getElementById('limiter_gr_bar').style.width = limiterGrPercent + '%';
         });
