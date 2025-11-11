@@ -1,0 +1,7 @@
+{
+  "name": "Warwick Thumb Bass",
+  "num_strings": 6,
+  "pickup_types": ["soapbar", "soapbar"],
+  "closest_distance_mm_per_pickup": [25.0, 8.0],
+  "dsp_params": [1.0, 1.0, 20000.0, 1.0]
+}

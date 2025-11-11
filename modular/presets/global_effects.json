@@ -1,0 +1,14 @@
+{
+  "effects_params": {
+    "svf_base_cutoff": 603.0,
+    "svf_env_depth": 4923.0,
+    "oct_dry": 0.0,
+    "oct_sub_gain": 2.0
+  },
+  "comp_bypass": false,
+  "comp_params": {
+    "comp_threshold": -21.0,
+    "comp_ratio": 3.8,
+    "comp_makeup": 0.55
+  }
+}

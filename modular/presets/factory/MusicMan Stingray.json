@@ -1,0 +1,7 @@
+{
+  "name": "MusicMan Stingray",
+  "num_strings": 6,
+  "pickup_types": ["humbucker", "none"],
+  "closest_distance_mm_per_pickup": [17.0, 0.0],
+  "dsp_params": [1.0, 0.0, 20000.0, 1.0]
+}
