@@ -30,51 +30,9 @@ cd simple-bass-sim/modular
 ./setup.sh install
 ```
 
-### Signal Flow
+### Signal Path
 
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="560">
-  <defs>
-    <marker id="arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#555"/>
-    </marker>
-  </defs>
-
-  <rect x="40" y="20" width="260" height="60" fill="#f8f9fb" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
-  <text x="60" y="50" style="font:14px sans-serif; fill:#111">GK-3B Hex Pickup</text>
-  <text x="60" y="68" style="font:12px sans-serif; fill:#444">(6 mono inputs)</text>
-
-  <line x1="170" y1="80" x2="170" y2="110" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
-
-  <rect x="40" y="110" width="680" height="70" fill="#f8f9fb" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
-  <text x="60" y="150" style="font:14px sans-serif; fill:#111">Per-string Comb Filters (bridge → pickup geometry)</text>
-  <text x="60" y="168" style="font:12px sans-serif; fill:#444">Feedback path — static geometry</text>
-
-  <line x1="350" y1="180" x2="350" y2="210" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
-
-  <rect x="200" y="210" width="320" height="54" fill="#f8f9fb" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
-  <text x="220" y="242" style="font:14px sans-serif; fill:#111">Summing Mixer → Stereo</text>
-
-  <line x1="350" y1="264" x2="350" y2="290" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
-
-  <rect x="200" y="290" width="320" height="54" fill="#f8f9fb" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
-  <text x="220" y="322" style="font:14px sans-serif; fill:#111">SVF (Envelope-controlled)</text>
-
-  <line x1="350" y1="344" x2="350" y2="370" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
-
-  <rect x="200" y="370" width="320" height="54" fill="#f8f9fb" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
-  <text x="220" y="402" style="font:14px sans-serif; fill:#111">Octaver / Pitch Shifter (optional)</text>
-
-  <line x1="350" y1="424" x2="350" y2="450" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
-
-  <rect x="200" y="450" width="320" height="54" fill="#f8f9fb" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
-  <text x="220" y="482" style="font:14px sans-serif; fill:#111">Compressor → Limiter (global)</text>
-
-  <line x1="350" y1="504" x2="350" y2="520" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
-
-  <rect x="200" y="520" width="320" height="40" fill="#f8f9fb" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
-  <text x="290" y="546" style="font:14px sans-serif; fill:#111">JACK Stereo Out</text>
-</svg>
-
+![Signal Path Diagram](assets/signal_path.svg)
 
 ### Software Architecture
 
