@@ -41,7 +41,7 @@ EFFECT_PARAMS = {
 EFFECTS_BYPASS = {
     "env_filter": True,
     "octaver": True,
-    "comp": True,
+    "comp": False,
 }
 
 LAST_PEAK_DB = -120.0
