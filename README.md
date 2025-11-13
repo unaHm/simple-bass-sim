@@ -13,11 +13,177 @@ The presets are approximations of the following:
 3. Stingray
 4. Acoustic Bass
 
-Add PureData patch commit
+## 🎛️ System Architecture Overview
 
-After numerous weeks of 'chatting' with ChatGPT, I decided to start building a PureData patch by hand. Thanks to some great tutorials by QGCInteractiveMusic, SoundSimulator and Simon Hutchinson, I was able to get this patch to the state it is in now. This patch has not received any real-world testing as yet.
+The **Simple Bass Simulator** system is a hybrid real-time bass guitar simulator built for the Linux audio environment using JACK.  
+It models magnetic pickup behavior, pickup placement, and instrument body resonance through a chain of DSP modules optimized with Numba.
 
-# TODO
+The goal was to build this code in Python to make it portable between different platforms and architectures. I wanted to target this for final use on a Raspberry Pi 5 using an XMOS XK-AUDIO-316-MC-AB board that I could then build into a 'stage box'. The Pi would be running PatchBoxOS, and I could connect to the DSP through the web UI.
 
-* Add links to reference documentation
-* Perform real-world testing
+### Signal Flow
+
+<!-- Signal path SVG: copy into README.md -->
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="560" viewBox="0 0 700 560">
+  <style>
+    .box{fill:#f8f9fb;stroke:#cbd5e1;stroke-width:1.5;rx:6; }
+    .label{font:14px/1.2 sans-serif; fill:#111;}
+    .small{font:12px/1.2 sans-serif; fill:#333;}
+    .arrow{stroke:#6b7280; stroke-width:2; fill:none; marker-end:url(#arrowhead);}
+  </style>
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#6b7280" />
+    </marker>
+  </defs>
+
+  <!-- GK-3B -->
+  <rect x="50" y="20" width="240" height="60" class="box" rx="6"/>
+  <text x="70" y="48" class="label">GK-3B Hex Pickup</text>
+  <text x="70" y="64" class="small">(6 mono inputs)</text>
+
+  <!-- Per-string comb -->
+  <rect x="50" y="110" width="600" height="70" class="box" rx="6"/>
+  <text x="70" y="150" class="label">Per-string Comb Filters (bridge → pickup geometry)</text>
+  <text x="70" y="166" class="small">Feedback path — static geometry</text>
+
+  <!-- Summing -->
+  <rect x="200" y="210" width="300" height="54" class="box" rx="6"/>
+  <text x="220" y="240" class="label">Summing Mixer → 2-channel</text>
+
+  <!-- SVF -->
+  <rect x="200" y="290" width="300" height="54" class="box" rx="6"/>
+  <text x="220" y="320" class="label">SVF (Envelope-controlled)</text>
+
+  <!-- Octaver -->
+  <rect x="200" y="370" width="300" height="54" class="box" rx="6"/>
+  <text x="220" y="400" class="label">Octaver / Pitch Shifter (optional)</text>
+
+  <!-- Compressor -->
+  <rect x="200" y="450" width="300" height="54" class="box" rx="6"/>
+  <text x="220" y="480" class="label">Compressor → Limiter (global)</text>
+
+  <!-- JACK Out -->
+  <rect x="200" y="520" width="300" height="40" class="box" rx="6"/>
+  <text x="320" y="545" class="label">JACK Stereo Out</text>
+
+  <!-- arrows -->
+  <path d="M170 80 L170 110" class="arrow"/>
+  <path d="M350 180 L350 210" class="arrow"/>
+  <path d="M350 264 L350 290" class="arrow"/>
+  <path d="M350 344 L350 370" class="arrow"/>
+  <path d="M350 424 L350 450" class="arrow"/>
+  <path d="M350 504 L350 520" class="arrow"/>
+</svg>
+
+
+### Software Architecture
+
+| Component | Role | Key Technologies |
+|------------|------|------------------|
+| **`jack_engine.py`** | Real-time DSP core, JACK callback management, Numba-compiled processing kernels | Python, `jack-client`, `numba`, `numpy` |
+| **`dsp.py`** | DSP effect models (SVF, Octaver, Compressor, Limiter, Comb Filters) | `numpy`, `numba` |
+| **`api.py`** | RESTful Flask API for preset management, DSP parameter control, and state serialization | Flask, JSON |
+| **`ui_templates.py`** | Web-based control interface (sliders, meters, and parameter monitoring) | HTML5, JavaScript, CSS |
+| **`instrument_geometry.json`** | Static definition of physical pickup geometry in millimeters | JSON |
+| **`presets/`** | Factory and user preset definitions (pickup distances, EQ profiles, etc.) | JSON |
+| **`main.py`** | Application launcher (initializes JACK, Flask server, and auto-loads presets) | Python |
+
+### Runtime Integration
+
+- **Audio Thread:**  
+  Low-latency callback managed by `jack_engine`, processing each block with Numba-compiled kernels.
+- **Control Thread:**  
+  Flask web server exposes `/api/*` routes for real-time control from the web UI.
+- **UI Thread:**  
+  A lightweight HTML+JS frontend interacts with the Flask API for live parameter updates.
+- **Persistence:**  
+  User presets are stored in JSON; fixed hardware geometry (bridge–pickup distances) is read-only and defined externally.
+
+---
+
+## 📚 Technical References
+
+### Core Frameworks and Libraries
+
+- **Python Software Foundation.**  
+  *The Python Language Reference, v3.12.*  
+  <https://docs.python.org/3.12/>
+
+- **NumPy Developers.**  
+  *NumPy Reference Documentation.*  
+  <https://numpy.org/doc/stable/>
+
+- **Numba Developers.**  
+  *Numba: A High Performance Python Compiler.*  
+  <https://numba.pydata.org/>
+
+- **Flask Framework.**  
+  *Flask Web Development Framework Documentation.*  
+  <https://flask.palletsprojects.com/>
+
+- **JACK Audio Connection Kit.**  
+  *Official JACK API Documentation and Python Bindings (`jack-client`).*  
+  <https://jackaudio.org/api/>  
+  <https://pypi.org/project/JACK-Client/>
+
+### Digital Signal Processing Theory
+
+- Smith, Julius O. (2010).  
+  *Physical Audio Signal Processing.*  
+  W3K Publishing, Stanford University.  
+  [https://ccrma.stanford.edu/~jos/pasp/](https://ccrma.stanford.edu/~jos/pasp/)
+
+- Zölzer, Udo (ed.) (2011).  
+  *DAFX: Digital Audio Effects (2nd Edition).*  
+  Wiley.  
+  ISBN 978-0-470-74368-3.
+
+- Pirkle, Will (2019).  
+  *Designing Audio Effect Plug-Ins in C++: For AAX, AU, and VST3 with DSP Theory (2nd Edition).*  
+  Routledge.  
+  ISBN 978-1-138-05717-4.
+
+### Modular Audio and Synthesis Frameworks
+
+- *Pure Data (Pd) Documentation and Source Examples.*  
+  [https://puredata.info/docs/](https://puredata.info/docs/)
+
+- *Cycling ’74 Max/MSP Reference.*  
+  [https://docs.cycling74.com/](https://docs.cycling74.com/)
+
+### Hardware and Physical Modeling Context
+
+- **Roland GK-3B Bass Divided Pickup – Owner’s Manual.**  
+  Roland Corporation.  
+  (for understanding string-to-channel architecture and magnetic pickup geometry)
+
+- **General Bass Guitar Reference Materials.**  
+  Various manufacturers’ technical drawings (Fender, MusicMan, Warwick, Hofner)  
+  used for pickup spacing and bridge-to-pickup distance calibration.
+
+---
+
+## 🧠 Development Acknowledgments
+
+- **DSP and Core System Architecture:**  
+  Developed by Dan Swain with algorithmic assistance from **OpenAI GPT-5**, using  
+  general DSP principles, JACK integration, and Numba optimization techniques.
+
+- **User Interface (Web UI) Enhancements and Layout Improvements:**  
+  Designed and refined with support from **Google Gemini**,  
+  incorporating accessibility, numeric readouts, and real-time update optimizations.
+
+- **No proprietary or copyrighted code** was used;  
+  all DSP and control implementations are based on publicly documented, academically standard methods.
+
+---
+
+## 📄 Citation
+
+If you reference this project in academic, research, or open-source documentation, please cite:
+
+> Swain, D. (2025). *Simple Bass Simulator: Real-Time Physical Bass Guitar Simulation with Numba and JACK.*  
+> Developed with algorithmic assistance from OpenAI GPT-5 and Google Gemini.  
+> Retrieved from: [https://github.com/unahm/simple-bass-sim](https://github.com/unahm/simple-bass-sim)
+
+---
