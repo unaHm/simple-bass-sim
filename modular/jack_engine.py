@@ -12,6 +12,7 @@ import jack
 import numpy as np
 import math
 import time
+import json
 from pathlib import Path
 
 # ----------------------------
@@ -55,6 +56,8 @@ INSTR_MODEL = {
     "comb_delays_samples": None,
 }
 
+STATIC_COMB_DELAYS = []
+
 # ----------------------------
 # JACK setup
 # ----------------------------
@@ -77,6 +80,18 @@ else:
     outL = None
     outR = None
     SAMPLERATE = 48000
+
+try:
+    if STATIC_COMB_DELAYS is None:
+        print("[jack_engine] Initializing static GK-3B geometry...")
+        load_static_geometry(SAMPLERATE)
+    if STATIC_COMB_DELAYS:
+        set_feedback_comb_delays(STATIC_COMB_DELAYS)
+        print("[jack_engine] Applied static comb filter delays.")
+    else:
+        print("[jack_engine] Warning: STATIC_COMB_DELAYS empty; geometry may have failed to load.")
+except Exception as e:
+    print(f"[jack_engine] Warning: static geometry setup failed: {e}")
 
 # ----------------------------
 # Numba helper
@@ -185,6 +200,67 @@ def set_comb_delays(delays):
 if INSTR_MODEL.get("comb_delays_samples") is None:
     default_combs = compute_comb_delays_from_mm(INSTR_MODEL["closest_distance_mm_per_pickup"], INSTR_MODEL["pickup_types"], SAMPLERATE)
     set_comb_delays(default_combs)
+
+def set_feedback_comb_delays(delays):
+    """Apply static feedback comb filter delays (geometry-based)."""
+    global FB_FILTERS
+    try:
+        for s in range(len(FB_FILTERS)):
+            taps = delays[s][0]  # we store one pickup per string
+            for t, d in enumerate(taps):
+                d = int(max(1, d))
+                FB_FILTERS[s][t].set_delay(d)
+        print("[jack_engine] Feedback comb filter delays applied.")
+    except Exception as e:
+        print(f"[jack_engine] Failed to apply feedback comb delays: {e}")
+
+def load_instrument_geometry(path="instrument_geometry.json"):
+    """Load fixed feedback comb filter geometry from JSON file."""
+    global STATIC_COMB_DELAYS
+    geom_path = Path(path)
+    if not geom_path.exists():
+        print(f"[jack_engine] Warning: Geometry file '{path}' not found; using defaults.")
+        STATIC_COMB_DELAYS = []
+        return
+
+    try:
+        with open(geom_path, "r") as f:
+            geom = json.load(f)
+
+        # Expected structure: { "closest_distance_mm": [mm_per_string], "pickup_type": "single" }
+        closest_mm = geom.get("closest_distance_mm")
+        if closest_mm is None:
+            raise ValueError("Missing 'closest_distance_mm' field in geometry file.")
+
+        # compute_comb_delays_samples_from_mm is defined in api.py — we import it here
+        try:
+            from api import compute_comb_delays_samples_from_mm
+        except ImportError:
+            print("[jack_engine] Warning: could not import compute_comb_delays_samples_from_mm.")
+            return
+
+        pickup_type = geom.get("pickup_type", "single")
+        # Compute static delays (feedback path)
+        STATIC_COMB_DELAYS = compute_comb_delays_samples_from_mm(
+            [float(mm) for mm in closest_mm],
+            [pickup_type],
+            SAMPLERATE
+        )
+
+        # Apply immediately
+        if hasattr(globals(), "set_feedback_comb_delays"):
+            set_feedback_comb_delays(STATIC_COMB_DELAYS)
+        else:
+            print("[jack_engine] set_feedback_comb_delays() not defined; skipping apply.")
+
+        print(f"[jack_engine] Loaded static feedback delays: {STATIC_COMB_DELAYS}")
+
+    except Exception as e:
+        print(f"[jack_engine] Warning: Failed to load geometry: {e}")
+        STATIC_COMB_DELAYS = []
+
+# Call loader at startup
+load_instrument_geometry()
 
 # ----------------------------
 # Numba comb processor
