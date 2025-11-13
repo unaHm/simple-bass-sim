@@ -20,59 +20,59 @@ It models magnetic pickup behavior, pickup placement, and instrument body resona
 
 The goal was to build this code in Python to make it portable between different platforms and architectures. I wanted to target this for final use on a Raspberry Pi 5 using an XMOS XK-AUDIO-316-MC-AB board that I could then build into a 'stage box'. The Pi would be running PatchBoxOS, and I could connect to the DSP through the web UI.
 
+## 🚀 Quickstart
+
+Clone the repository and run the setup script:
+
+```bash
+git clone https://github.com/unahm/simple-bass-sim.git
+cd simple-bass-sim/modular
+./setup.sh install
+```
+
 ### Signal Flow
 
-<!-- Signal path SVG: copy into README.md -->
-<svg xmlns="http://www.w3.org/2000/svg" width="700" height="560" viewBox="0 0 700 560">
-  <style>
-    .box{fill:#f8f9fb;stroke:#cbd5e1;stroke-width:1.5;rx:6; }
-    .label{font:14px/1.2 sans-serif; fill:#111;}
-    .small{font:12px/1.2 sans-serif; fill:#333;}
-    .arrow{stroke:#6b7280; stroke-width:2; fill:none; marker-end:url(#arrowhead);}
-  </style>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="560">
   <defs>
-    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#6b7280" />
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#555"/>
     </marker>
   </defs>
 
-  <!-- GK-3B -->
-  <rect x="50" y="20" width="240" height="60" class="box" rx="6"/>
-  <text x="70" y="48" class="label">GK-3B Hex Pickup</text>
-  <text x="70" y="64" class="small">(6 mono inputs)</text>
+  <rect x="40" y="20" width="260" height="60" fill="#f8f9fb" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
+  <text x="60" y="50" style="font:14px sans-serif; fill:#111">GK-3B Hex Pickup</text>
+  <text x="60" y="68" style="font:12px sans-serif; fill:#444">(6 mono inputs)</text>
 
-  <!-- Per-string comb -->
-  <rect x="50" y="110" width="600" height="70" class="box" rx="6"/>
-  <text x="70" y="150" class="label">Per-string Comb Filters (bridge → pickup geometry)</text>
-  <text x="70" y="166" class="small">Feedback path — static geometry</text>
+  <line x1="170" y1="80" x2="170" y2="110" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
 
-  <!-- Summing -->
-  <rect x="200" y="210" width="300" height="54" class="box" rx="6"/>
-  <text x="220" y="240" class="label">Summing Mixer → 2-channel</text>
+  <rect x="40" y="110" width="680" height="70" fill="#f8f9fb" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
+  <text x="60" y="150" style="font:14px sans-serif; fill:#111">Per-string Comb Filters (bridge → pickup geometry)</text>
+  <text x="60" y="168" style="font:12px sans-serif; fill:#444">Feedback path — static geometry</text>
 
-  <!-- SVF -->
-  <rect x="200" y="290" width="300" height="54" class="box" rx="6"/>
-  <text x="220" y="320" class="label">SVF (Envelope-controlled)</text>
+  <line x1="350" y1="180" x2="350" y2="210" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
 
-  <!-- Octaver -->
-  <rect x="200" y="370" width="300" height="54" class="box" rx="6"/>
-  <text x="220" y="400" class="label">Octaver / Pitch Shifter (optional)</text>
+  <rect x="200" y="210" width="320" height="54" fill="#f8f9fb" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
+  <text x="220" y="242" style="font:14px sans-serif; fill:#111">Summing Mixer → Stereo</text>
 
-  <!-- Compressor -->
-  <rect x="200" y="450" width="300" height="54" class="box" rx="6"/>
-  <text x="220" y="480" class="label">Compressor → Limiter (global)</text>
+  <line x1="350" y1="264" x2="350" y2="290" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
 
-  <!-- JACK Out -->
-  <rect x="200" y="520" width="300" height="40" class="box" rx="6"/>
-  <text x="320" y="545" class="label">JACK Stereo Out</text>
+  <rect x="200" y="290" width="320" height="54" fill="#f8f9fb" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
+  <text x="220" y="322" style="font:14px sans-serif; fill:#111">SVF (Envelope-controlled)</text>
 
-  <!-- arrows -->
-  <path d="M170 80 L170 110" class="arrow"/>
-  <path d="M350 180 L350 210" class="arrow"/>
-  <path d="M350 264 L350 290" class="arrow"/>
-  <path d="M350 344 L350 370" class="arrow"/>
-  <path d="M350 424 L350 450" class="arrow"/>
-  <path d="M350 504 L350 520" class="arrow"/>
+  <line x1="350" y1="344" x2="350" y2="370" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="200" y="370" width="320" height="54" fill="#f8f9fb" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
+  <text x="220" y="402" style="font:14px sans-serif; fill:#111">Octaver / Pitch Shifter (optional)</text>
+
+  <line x1="350" y1="424" x2="350" y2="450" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="200" y="450" width="320" height="54" fill="#f8f9fb" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
+  <text x="220" y="482" style="font:14px sans-serif; fill:#111">Compressor → Limiter (global)</text>
+
+  <line x1="350" y1="504" x2="350" y2="520" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="200" y="520" width="320" height="40" fill="#f8f9fb" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
+  <text x="290" y="546" style="font:14px sans-serif; fill:#111">JACK Stereo Out</text>
 </svg>
 
 
