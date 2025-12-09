@@ -1,0 +1,7 @@
+{
+  "name": "Precision Bass",
+  "num_strings": 6,
+  "pickup_types": ["splitP", "none"],
+  "closest_distance_mm_per_pickup": [70.0, 0.0],
+  "dsp_params": [1.0, 0.0, 20000.0, 1.0]
+}

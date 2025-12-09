@@ -1,0 +1,108 @@
+{
+  "name": "crazyp",
+  "dsp_params": [
+    1.0,
+    1.0,
+    603.0,
+    1.0
+  ],
+  "pickup_types": [
+    "splitP",
+    "splitP"
+  ],
+  "closest_distance_mm_per_pickup": [
+    160.0,
+    29.9
+  ],
+  "comb_delays_samples": [
+    [
+      [
+        10,
+        11,
+        12
+      ],
+      [
+        4,
+        6,
+        7
+      ]
+    ],
+    [
+      [
+        10,
+        11,
+        12
+      ],
+      [
+        4,
+        6,
+        7
+      ]
+    ],
+    [
+      [
+        10,
+        11,
+        12
+      ],
+      [
+        4,
+        6,
+        7
+      ]
+    ],
+    [
+      [
+        10,
+        11,
+        12
+      ],
+      [
+        4,
+        6,
+        7
+      ]
+    ],
+    [
+      [
+        10,
+        11,
+        12
+      ],
+      [
+        4,
+        6,
+        7
+      ]
+    ],
+    [
+      [
+        10,
+        11,
+        12
+      ],
+      [
+        4,
+        6,
+        7
+      ]
+    ]
+  ],
+  "num_strings": 6,
+  "effects": {
+    "effects_params": {
+      "svf_base_cutoff": 603.0,
+      "svf_env_depth": 4923.0,
+      "oct_dry": 0.0,
+      "oct_sub_gain": 2.0,
+      "comp_threshold": -21.0,
+      "comp_ratio": 3.8,
+      "comp_makeup": 0.55
+    },
+    "effects_bypass": {
+      "env_filter": true,
+      "octaver": true,
+      "comp": false
+    }
+  }
+}

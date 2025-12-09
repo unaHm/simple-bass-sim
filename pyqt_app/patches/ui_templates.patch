@@ -1,0 +1,72 @@
+--- a/ui_templates.py
++++ b/ui_templates.py
+@@ -110,6 +110,73 @@ EFFECT_CONTROLS = """
+     </div>
+
+     <hr>
+
++    <h3>Effects</h3>
++    <div class="effect-group">
++      <label>SVF Base Cutoff (Hz)</label>
++      <input type="range" id="svf_base_cutoff" min="100" max="5000" step="1" value="800">
++      <span id="svf_base_cutoff_val">800</span>
++    </div>
++
++    <div class="effect-group">
++      <label>SVF Envelope Depth (Hz)</label>
++      <input type="range" id="svf_env_depth" min="0" max="5000" step="1" value="1200">
++      <span id="svf_env_depth_val">1200</span>
++    </div>
++
++    <div class="effect-group">
++      <label>Octaver Dry Level</label>
++      <input type="range" id="oct_dry" min="0" max="1" step="0.01" value="0.65">
++      <span id="oct_dry_val">0.65</span>
++    </div>
++
++    <div class="effect-group">
++      <label>Octaver Sub Gain</label>
++      <input type="range" id="oct_sub_gain" min="0" max="2" step="0.01" value="0.9">
++      <span id="oct_sub_gain_val">0.9</span>
++    </div>
++
++    <div class="effect-group">
++      <label>Compressor Threshold (dB)</label>
++      <input type="range" id="comp_threshold" min="-40" max="0" step="1" value="-18">
++      <span id="comp_threshold_val">-18</span>
++    </div>
++
++    <div class="effect-group">
++      <label>Compressor Ratio</label>
++      <input type="range" id="comp_ratio" min="1" max="20" step="0.1" value="4">
++      <span id="comp_ratio_val">4.0</span>
++    </div>
++
++    <div class="effect-group">
++      <label>Compressor Makeup Gain (linear)</label>
++      <input type="range" id="comp_makeup" min="0" max="4" step="0.01" value="1.0">
++      <span id="comp_makeup_val">1.0</span>
++    </div>
++
++    <script>
++      function updateEffectParam(id) {
++        const el = document.getElementById(id);
++        document.getElementById(id + "_val").innerText = el.value;
++        fetch("/api/update_effects_params", {
++          method: "POST",
++          headers: { "Content-Type": "application/json" },
++          body: JSON.stringify({
++            param: id,
++            value: parseFloat(el.value)
++          })
++        });
++      }
++
++      [
++        "svf_base_cutoff", "svf_env_depth",
++        "oct_dry", "oct_sub_gain",
++        "comp_threshold", "comp_ratio", "comp_makeup"
++      ].forEach(id => {
++        document.getElementById(id).addEventListener("input", () => updateEffectParam(id));
++      });
++    </script>

@@ -1,0 +1,8 @@
+{
+  "comp_bypass": false,
+  "comp_params": {
+    "comp_threshold": -7.0,
+    "comp_ratio": 4.0,
+    "comp_makeup": 0.55
+  }
+}
