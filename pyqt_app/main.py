@@ -9,6 +9,7 @@ Behavior:
 - Handle Ctrl+C for clean shutdown
 """
 
+import math
 import sys
 import threading
 import time
@@ -189,7 +190,7 @@ class MainWindow(QMainWindow):
         sliders_group.setLayout(sliders_layout)
         self._add_slider(sliders_layout, 0, "P1 Vol", "p1", 0, 100, 100.0)
         self._add_slider(sliders_layout, 1, "P2 Vol", "p2", 0, 100, 100.0)
-        self._add_slider(sliders_layout, 2, "Master", "mg", 0, 200, 2.0)
+        self._add_slider(sliders_layout, 2, "Master (dB)", "mg", -60, 6, 1.0)
         layout.addWidget(sliders_group)
 
         layout.addStretch()
@@ -208,14 +209,23 @@ class MainWindow(QMainWindow):
         self._add_bypass_toggle(bypass_layout, "Octaver", "octaver")
         self._add_bypass_toggle(bypass_layout, "Compressor", "comp")
         layout.addWidget(bypass_group)
+        
+        # Acoustic Model Group
+        acoustic_group = self._create_acoustic_model_group()
+        layout.addWidget(acoustic_group)
 
         # Effect Parameters
-        svf_group = self._create_svf_group()
-        oct_group = self._create_octaver_group()
+        self._controls['svf_group'] = self._create_svf_group()
+        self._controls['oct_group'] = self._create_octaver_group()
         comp_group = self._create_compressor_group()
 
-        layout.addWidget(svf_group)
-        layout.addWidget(oct_group)
+        # Add standard effects to a container widget for easy show/hide
+        self._controls['standard_effects_container'] = QWidget()
+        standard_effects_layout = QVBoxLayout(self._controls['standard_effects_container'])
+        standard_effects_layout.addWidget(self._controls['svf_group'])
+        standard_effects_layout.addWidget(self._controls['oct_group'])
+        standard_effects_layout.setContentsMargins(0,0,0,0)
+        layout.addWidget(self._controls['standard_effects_container'])
         layout.addWidget(comp_group)
 
         # Global Compressor Save
@@ -232,21 +242,41 @@ class MainWindow(QMainWindow):
     def _create_svf_group(self):
         group = QGroupBox("State Variable Filter")
         layout = QGridLayout(group)
-        self._add_slider(layout, 0, "SVF Cutoff", "svf_base_cutoff", 100, 5000)
-        self._add_slider(layout, 1, "SVF Env", "svf_env_depth", 0, 5000)
+        self._add_slider(layout, 0, "SVF Cutoff (Hz)", "svf_base_cutoff", 100, 5000)
+        self._add_slider(layout, 1, "SVF Env (Hz)", "svf_env_depth", 0, 5000)
         return group
 
     def _create_octaver_group(self):
         group = QGroupBox("Octaver")
         layout = QGridLayout(group)
-        self._add_slider(layout, 0, "Octave Mix", "oct_mix", 0, 100, 100.0)
+        self._add_slider(layout, 0, "Octave Mix (%)", "oct_mix", 0, 100, 100.0)
+        return group
+
+    def _create_acoustic_model_group(self):
+        group = QGroupBox("Acoustic Bass Model")
+        layout = QGridLayout(group)
+        
+        # The main toggle for the mode
+        self._add_bypass_toggle(layout, "Enable Acoustic Model", "acoustic_mode")
+        
+        # Preset selector
+        self._add_combo_box(layout, 1, "Model Preset", "acoustic_model_preset", [])
+
+        # A container for the sliders, so we can enable/disable them separately
+        param_container = QWidget()
+        param_layout = QGridLayout(param_container)
+        self._add_slider(param_layout, 0, "Body Size (%)", "acoustic_body_size", 0, 100, 100.0)
+        self._add_slider(param_layout, 1, "Tone (%)", "acoustic_tone", 0, 100, 100.0)
+        self._add_slider(param_layout, 2, "Mix (%)", "acoustic_mix", 0, 100, 100.0)
+        layout.addWidget(param_container, 2, 0, 1, 3) # Add container below the toggle and preset selector
+        self._controls['acoustic_params_group'] = param_container # Store the container to enable/disable
         return group
 
     def _create_compressor_group(self):
         group = QGroupBox("Compressor")
         layout = QGridLayout(group)
-        self._add_slider(layout, 0, "Comp Thresh", "comp_threshold", -40, 0)
-        self._add_slider(layout, 1, "Comp Ratio", "comp_ratio", 10, 120, 10.0)
+        self._add_slider(layout, 0, "Comp Thresh (dB)", "comp_threshold", -40, 0)
+        self._add_slider(layout, 1, "Comp Ratio (x:1)", "comp_ratio", 10, 120, 10.0)
         self._add_slider(layout, 2, "Comp Makeup (dB)", "comp_makeup", 0, 6, 1.0)
         return group
 
@@ -340,12 +370,18 @@ class MainWindow(QMainWindow):
         layout.addWidget(label, row, 0)
         layout.addWidget(combo, row, 1, 1, 2) # Span 2 columns
         self._controls[key] = combo
-        combo.currentTextChanged.connect(lambda text, k=key: self._on_pickup_type_change(k, text))
-
-    def _on_pickup_type_change(self, key, text):
-        slot = 0 if 'p1' in key else 1
-        if hasattr(je, 'set_pickup_type'):
-            je.set_pickup_type({'pickup_slot': slot, 'type': text})
+        combo.currentTextChanged.connect(lambda text, k=key: self._on_combo_box_change(k, text))
+    
+    def _on_combo_box_change(self, key, text):
+        if not text: return # Ignore empty signals during clear/repopulation
+        
+        if key.endswith('_type'): # Handle pickup types
+            slot = 0 if 'p1' in key else 1
+            if hasattr(je, 'set_pickup_type'):
+                je.set_pickup_type({'pickup_slot': slot, 'type': text})
+        elif key == 'acoustic_model_preset': # Handle acoustic model presets
+            if hasattr(je, 'update_effects_params'):
+                je.update_effects_params({'param': key, 'value': text})
 
     def _on_p2_enabled_change(self, enabled):
         self._controls['p2_group'].setEnabled(enabled)
@@ -388,13 +424,23 @@ class MainWindow(QMainWindow):
         button.setCheckable(True) # Make it a toggle button
         layout.addWidget(button)
         self._controls[key] = button
-        # INVERTED LOGIC: checked means effect is ACTIVE (bypass=False)
-        button.toggled.connect(lambda state, k=key: self._on_bypass_change(k, not state))
+        if key == 'acoustic_mode':
+            # For acoustic mode, checked means ACTIVE (enabled=True)
+            button.toggled.connect(lambda state, k=key: self._on_bypass_change(k, state))
+        else:
+            # For other effects, checked means ACTIVE (bypass=False) - INVERTED LOGIC
+            button.toggled.connect(lambda state, k=key: self._on_bypass_change(k, not state))
 
     def _on_param_change(self, key, value):
         if not self._controls[key]['slider'].isSliderDown(): return
         multiplier = self._controls[key].get('multiplier', 1.0)
-        final_value = value / multiplier if key in ['p1', 'p2', 'oct_mix', 'comp_ratio'] or key.endswith('_dist') else (value / 100.0 if key != 'comp_makeup' and multiplier != 1.0 else value)
+        
+        if key == 'mg':
+            # Convert dB value from slider to linear gain for the engine
+            final_value = 10.0 ** (value / 20.0)
+        else:
+            # Existing logic for other sliders
+            final_value = value / multiplier if key in ['p1', 'p2', 'oct_mix', 'comp_ratio'] or key.endswith('_dist') else (value / 100.0 if key != 'comp_makeup' and multiplier != 1.0 else value)
 
         if key in ['p1', 'p2', 'mg']:
              if hasattr(je, 'update_controls'): je.update_controls({key: final_value})
@@ -402,17 +448,21 @@ class MainWindow(QMainWindow):
             slot = 0 if 'p1' in key else 1
             if hasattr(je, 'set_pickup_distance'):
                 je.set_pickup_distance({'pickup_slot': slot, 'distance_mm': final_value})
-        elif key == 'oct_mix':
-            if hasattr(je, 'update_effects_params'):
-                # oct_mix slider controls two parameters
-                je.update_effects_params({'param': 'oct_dry', 'value': 1.0 - final_value})
-                je.update_effects_params({'param': 'oct_sub_gain', 'value': final_value})
+        # Handle all other effect params, including new acoustic ones
         else:
             if hasattr(je, 'update_effects_params'): je.update_effects_params({'param': key, 'value': final_value})
 
     def _on_bypass_change(self, key, is_bypassed):
-        if hasattr(je, 'set_bypass'):
-            je.set_bypass({'name': key, 'state': is_bypassed})
+        # If this is the acoustic mode toggle, update UI visibility
+        if key == 'acoustic_mode':
+            is_acoustic_enabled = is_bypassed # For this key, the state is 'enabled', not 'bypassed'
+            if hasattr(je, 'set_bypass'):
+                je.set_bypass({'name': key, 'state': is_acoustic_enabled})
+            self._controls['standard_effects_container'].setVisible(not is_acoustic_enabled)
+            self._controls['acoustic_params_group'].setEnabled(is_acoustic_enabled)
+        else:
+            if hasattr(je, 'set_bypass'):
+                je.set_bypass({'name': key, 'state': is_bypassed})
 
     def _reload_last_preset(self):
         self._controls['preset_status_label'].setText("Reloading last preset...")
@@ -493,20 +543,51 @@ class MainWindow(QMainWindow):
                 if not ctrl['slider'].isSliderDown():
                     # Special handling for dist sliders which have different keys in state
                     state_key = f"p{key[1]}_dist" if key.endswith('_dist') else key
-                    if state_key in state:
+                    if state_key == 'mg' and 'mg' in state:
+                        # Convert linear gain from engine to dB for the slider
+                        gain = state['mg']
+                        db_val = 20.0 * math.log10(gain) if gain > 1e-6 else -60.0
+                        ctrl['slider'].setValue(int(db_val))
+                        ctrl['label'].setText(f"{db_val:.1f} dB")
+                    elif state_key in state:
                         val = state[state_key]
                         multiplier = ctrl.get('multiplier', 1.0)
-                        ctrl['slider'].setValue(int(val * multiplier if key in ['p1', 'p2', 'oct_mix', 'comp_ratio'] or key.endswith('_dist') else (val * 100.0 if key != 'comp_makeup' and multiplier != 1.0 else val)))
+                        # Generic value setting logic
+                        slider_value = int(val * multiplier)
+                        # Update slider and label for non-dB sliders
+                        ctrl['slider'].setValue(slider_value)
                         ctrl['label'].setText(f"{val:.2f}")
             elif isinstance(ctrl, QPushButton) and ctrl.isCheckable(): # Now handling checkable PushButtons
                 if key in state:  # state is bypass state
-                    ctrl.setChecked(not state[key]) # checked = active = not bypassed
+                    # Block signals to prevent feedback loop from _on_bypass_change
+                    if key == 'acoustic_mode':
+                        # For acoustic mode, state is 'acoustic_mode' which is the enabled flag
+                        ctrl.blockSignals(True)
+                        ctrl.setChecked(state[key])
+                        ctrl.blockSignals(False)
+                    else:
+                        ctrl.blockSignals(True)
+                        ctrl.setChecked(not state[key]) # checked = active = not bypassed
+                        ctrl.blockSignals(False)
             elif isinstance(ctrl, QComboBox):
                 if key in state:
                     # Block signals to prevent feedback loop
                     ctrl.blockSignals(True)
                     ctrl.setCurrentText(state[key])
+                    # If this is the acoustic preset combo and its items are empty, populate them
+                    if key == 'acoustic_model_preset' and ctrl.count() == 0 and 'acoustic_model_presets' in state:
+                        ctrl.addItems(state['acoustic_model_presets'])
+                        # After populating, set the current text again
+                        if key in state:
+                           ctrl.setCurrentText(state[key])
+
                     ctrl.blockSignals(False)
+        
+        # Handle visibility of effect groups based on acoustic mode
+        if 'acoustic_mode' in state:
+            is_acoustic_enabled = state['acoustic_mode']
+            self._controls['standard_effects_container'].setVisible(not is_acoustic_enabled)
+            self._controls['acoustic_params_group'].setEnabled(is_acoustic_enabled)
 
         # Special handling for pickup editor state
         if 'p1_type' in state and 'p2_type' in state:
@@ -590,6 +671,9 @@ STYLESHEET = """
         subcontrol-origin: margin;
         subcontrol-position: top center;
         padding: 0 5px;
+    }
+    QGroupBox:disabled {
+        color: #666;
     }
     QPushButton {
         background-color: #444444;

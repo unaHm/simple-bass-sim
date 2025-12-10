@@ -250,3 +250,30 @@ else:
             out_block[i] = x * gstate * makeup
         env_state[0] = env; gain_state[0] = gstate
         return 0
+
+if NUMBA_AVAILABLE:
+    @nb.njit(cache=True, fastmath=True)
+    def process_modal_synthesis_numba(frames, in_buf, out_buf,
+                                      filter_states, filter_coeffs, filter_gains,
+                                      dry_mix, wet_mix):
+        """
+        Processes audio through a bank of parallel resonant biquad filters.
+        filter_states: (num_modes, 4) -> [x1, x2, y1, y2]
+        filter_coeffs: (num_modes, 5) -> [b0, b1, b2, a1, a2]
+        """
+        num_modes = filter_coeffs.shape[0]
+        
+        for i in range(frames):
+            inp = in_buf[i]
+            wet_signal = 0.0
+            for m in range(num_modes):
+                # Direct Form I biquad implementation
+                y = (filter_coeffs[m, 0] * inp + filter_coeffs[m, 1] * filter_states[m, 0] + filter_coeffs[m, 2] * filter_states[m, 1]) - \
+                    (filter_coeffs[m, 3] * filter_states[m, 2] + filter_coeffs[m, 4] * filter_states[m, 3])
+                filter_states[m, 1], filter_states[m, 0] = filter_states[m, 0], inp # Update x states
+                filter_states[m, 3], filter_states[m, 2] = filter_states[m, 2], y   # Update y states
+                wet_signal += y * filter_gains[m]
+            
+            out_buf[i] = inp * dry_mix + wet_signal * wet_mix
+else:
+    process_modal_synthesis_numba = None

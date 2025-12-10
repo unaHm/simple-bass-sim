@@ -13,6 +13,7 @@ import numpy as np
 import math
 import time
 import json
+import dsp
 from pathlib import Path
 
 # ----------------------------
@@ -37,12 +38,17 @@ EFFECT_PARAMS = {
     "svf_env_depth": 0.0,
     "svf_q": 0.8,
 
-    "oct_dry": 1.0,
-    "oct_sub_gain": 0.0,
+    "oct_dry": 0.5,
+    "oct_sub_gain": 0.5,
 
     "comp_threshold": -20.0,
     "comp_ratio": 4.0,
     "comp_makeup": 0.0,
+
+    "acoustic_body_size": 0.5, # 0-1
+    "acoustic_tone": 0.5,      # 0-1
+    "acoustic_mix": 0.85,      # 0-1
+    "acoustic_model_preset": "Classic Violin-Corner", # Default preset
 }
 
 EFFECTS_BYPASS = {
@@ -50,6 +56,13 @@ EFFECTS_BYPASS = {
     "octaver": True,
     "comp": False,
 }
+
+ACOUSTIC_MODE_ENABLED = False
+acoustic_out_buffer = np.zeros(4096, dtype=np.float32) # Buffer for acoustic model output
+def _ensure_acoustic_buffer(n_frames):
+    global acoustic_out_buffer
+    if n_frames > acoustic_out_buffer.shape[0]:
+        acoustic_out_buffer = np.zeros(n_frames, dtype=np.float32)
 
 LAST_PEAK_DB = -120.0
 LAST_COMP_GR_DB = 0.0
@@ -346,6 +359,50 @@ def limiter_block_numba(frame):
         return frame, 0.0
 
 # ----------------------------
+# Acoustic model state
+# (Modal Synthesis)
+# ----------------------------
+# Freq, Q, Gain for each mode, per preset
+# These presets are designed to emulate different types of upright bass bodies.
+ACOUSTIC_MODEL_PRESETS = {
+    "Classic Violin-Corner": np.array([
+        [62.0,  60.0, 1.0],   # Main air resonance (A0)
+        [110.0, 50.0, 0.9],   # Main top resonance (T1)
+        [195.0, 40.0, 0.7],
+        [330.0, 35.0, 0.6],
+        [490.0, 30.0, 0.5],
+    ], dtype=np.float32),
+    "Gamba-Style": np.array([
+        [65.0,  55.0, 1.0],   # Slightly higher A0, more 'open'
+        [115.0, 50.0, 0.85],
+        [240.0, 38.0, 0.75],  # Different mid-range character
+        [420.0, 33.0, 0.6],
+        [580.0, 28.0, 0.5],
+    ], dtype=np.float32),
+    "German Flat-Back": np.array([
+        [58.0,  70.0, 1.0],   # Lower, boomier A0 with high Q
+        [95.0,  60.0, 0.95],  # Strong, low main wood resonance
+        [180.0, 45.0, 0.8],
+        [390.0, 30.0, 0.6],
+    ], dtype=np.float32),
+    "Soloist Carved-Back": np.array([
+        [68.0,  50.0, 1.0],   # Tighter, more focused A0
+        [125.0, 45.0, 0.9],   # Higher, articulate T1
+        [260.0, 40.0, 0.7],
+        [440.0, 35.0, 0.65],  # Clear upper-mids for melodic playing
+        [620.0, 30.0, 0.5],
+    ], dtype=np.float32),
+}
+MAX_MODES = max(p.shape[0] for p in ACOUSTIC_MODEL_PRESETS.values())
+modal_filter_states = np.zeros((MAX_MODES, 4), dtype=np.float32) # x1, x2, y1, y2 for each filter
+
+def modal_synthesis_fallback_py(frames, in_buf, out_buf, *args):
+    """Placeholder python version if numba is not available."""
+    if frames > 0:
+        print("[jack_engine] Warning: Modal synthesis requires Numba, but it's not available. Bypassing.")
+    out_buf[:frames] = in_buf[:frames]
+
+# ----------------------------
 # Granular pitch shifter (dual-grain, 50% overlap) - numba
 # ----------------------------
 # Parameters (tweakable)
@@ -594,6 +651,13 @@ if NUMBA_AVAILABLE:
         _ = compressor_process_block_numba(dummy, float(EFFECT_PARAMS['comp_threshold']), float(EFFECT_PARAMS['comp_ratio']), float(EFFECT_PARAMS['comp_makeup']))
         _ = limiter_block_numba(dummy)
         _ = granular_pitch_shift_numba(dummy, pitch_buf, pitch_buf.shape[0], pitch_write_idx, rpos0, rpos1, cnt0, cnt1, hann_win, GRAIN_SIZE, HOP, PITCH_RATIO, next_grain_trigger)
+        if dsp.process_modal_synthesis_numba:
+            dummy_coeffs = np.zeros((MAX_MODES, 5), dtype=np.float32)
+            dummy_gains = np.zeros(MAX_MODES, dtype=np.float32)
+            dsp.process_modal_synthesis_numba(
+                dummy.shape[0], dummy, dummy, modal_filter_states, dummy_coeffs, dummy_gains, 0.15, 0.85
+            )
+
         USE_NUMBA_KERNELS = True
         print("[jack_engine] numba kernels warmed up")
     except Exception as e:
@@ -638,45 +702,114 @@ def _process_callback(frames):
     for s in range(NUM_STRINGS):
         in_mat[s,:] = inputs[s] if s < len(inputs) else np.zeros(frames, dtype=np.float32)
 
-    gains = np.array([float(DSP_PARAMS[0]), float(DSP_PARAMS[1])], dtype=np.float32)
+    # --- Acoustic Model OR Standard Effects ---
+    if ACOUSTIC_MODE_ENABLED:
+        # For acoustic mode, we use a static virtual pickup configuration, ignoring the UI.
+        # Pickup 1 is at 350mm, Pickup 2 is disabled.
+        acoustic_pickup_dists = [350.0, 40.0] # P2 dist doesn't matter as type is 'none'
+        acoustic_pickup_types = ["single", "none"]
+        
+        # Compute temporary comb delays for this static configuration
+        static_combs = compute_comb_delays_from_mm(acoustic_pickup_dists, acoustic_pickup_types, SAMPLERATE)
+        static_lens = np.array(static_combs, dtype=np.int32)
+        
+        # Ensure our main buffer is large enough for these static delays
+        max_static_delay = np.max(static_lens)
+        _ensure_buffer_size(max_static_delay)
+        
+        # Use only pickup 1 volume, pickup 2 is off.
+        acoustic_gains = np.array([float(DSP_PARAMS[0]), 0.0], dtype=np.float32)
 
-    # comb processing
-    if USE_NUMBA_KERNELS:
-        try:
-            combined = comb_process_all_numba(in_mat, bufs, lens, idxs, gains)
-        except Exception as e:
-            print("[jack_engine] comb_process_all_numba error:", e)
-            combined = np.zeros(frames, dtype=np.float32)
+        # Run comb processing with the static acoustic configuration
+        if USE_NUMBA_KERNELS:
+            combined = comb_process_all_numba(in_mat, bufs, static_lens, idxs, acoustic_gains)
+        else:
+            combined = comb_process_all_numba(in_mat, bufs, static_lens, idxs, acoustic_gains)
+
+        out_l = combined.copy()
+        out_r = combined.copy()
+
+        # Now, process the result through the modal synthesizer
+        body_size = float(EFFECT_PARAMS.get("acoustic_body_size", 0.5))
+        tone = float(EFFECT_PARAMS.get("acoustic_tone", 0.5))
+        mix = float(EFFECT_PARAMS.get("acoustic_mix", 0.85))
+        preset_name = EFFECT_PARAMS.get("acoustic_model_preset", "Classic Violin-Corner")
+
+        # Get modes from the selected preset
+        base_modes = ACOUSTIC_MODEL_PRESETS.get(preset_name, ACOUSTIC_MODEL_PRESETS["Classic Violin-Corner"])
+        num_modes = base_modes.shape[0]
+        
+        # Calculate filter coefficients on the fly based on UI params
+        freq_scale = 0.8 + (0.4 * body_size) # Scale frequencies by +/- 20%
+        q_scale = 0.5 + (1.5 * tone) # Scale Q-factor
+
+        filter_coeffs = np.zeros((num_modes, 5), dtype=np.float32)
+        filter_gains = np.zeros(num_modes, dtype=np.float32)
+
+        for i in range(num_modes):
+            freq = base_modes[i, 0] * freq_scale
+            q = base_modes[i, 1] * q_scale
+            filter_gains[i] = base_modes[i, 2]
+
+            w0 = 2.0 * math.pi * freq / SAMPLERATE
+            alpha = math.sin(w0) / (2.0 * q)
+            
+            # Band-pass filter coefficients
+            filter_coeffs[i, 0] = alpha       # b0
+            filter_coeffs[i, 1] = 0.0         # b1
+            filter_coeffs[i, 2] = -alpha      # b2
+            filter_coeffs[i, 3] = -2.0 * math.cos(w0) # a1
+            filter_coeffs[i, 4] = 1.0 - alpha # a2
+            # Normalize by a0 = 1 + alpha
+            filter_coeffs[i, :] /= (1.0 + alpha)
+
+        mono_in = 0.5 * (out_l + out_r)
+        _ensure_acoustic_buffer(frames)
+        
+        kernel = dsp.process_modal_synthesis_numba if dsp.process_modal_synthesis_numba else modal_synthesis_fallback_py
+        kernel(frames, mono_in, acoustic_out_buffer, modal_filter_states, filter_coeffs, filter_gains, 1.0 - mix, mix)
+        out_l = acoustic_out_buffer[:frames]
+        out_r = acoustic_out_buffer[:frames].copy()
+
     else:
-        combined = comb_process_all_numba(in_mat, bufs, lens, idxs, gains)
+        # Standard processing path using UI-defined pickup settings
+        gains = np.array([float(DSP_PARAMS[0]), float(DSP_PARAMS[1])], dtype=np.float32)
 
-    out_l = combined.copy()
-    out_r = combined.copy()
-
-    # SVF
-    if not EFFECTS_BYPASS.get("env_filter", True):
-        base = EFFECT_PARAMS.get("svf_base_cutoff", 1000.0)
-        depth = EFFECT_PARAMS.get("svf_env_depth", 0.0)
-        q = EFFECT_PARAMS.get("svf_q", 0.8)
+        # Comb processing with dynamic delays from UI
         if USE_NUMBA_KERNELS:
-            out_l = svf_process_block_numba(out_l, svf_lp_l, svf_bp_l, svf_env_l, float(base), float(depth), float(q), float(SAMPLERATE))
-            out_r = svf_process_block_numba(out_r, svf_lp_r, svf_bp_r, svf_env_r, float(base), float(depth), float(q), float(SAMPLERATE))
+            try:
+                combined = comb_process_all_numba(in_mat, bufs, lens, idxs, gains)
+            except Exception as e:
+                print("[jack_engine] comb_process_all_numba error:", e)
+                combined = np.zeros(frames, dtype=np.float32)
         else:
-            out_l = svf_process_block_py(out_l, svf_state_l, base, depth, q)
-            out_r = svf_process_block_py(out_r, svf_state_r, base, depth, q)
+            combined = comb_process_all_numba(in_mat, bufs, lens, idxs, gains)
 
-    # Granular pitch shifter (summed)
-    if not EFFECTS_BYPASS.get("octaver", True):
-        dry = EFFECT_PARAMS.get("oct_dry", 1.0)
-        subg = EFFECT_PARAMS.get("oct_sub_gain", 0.0)
-        mono = 0.5 * (out_l + out_r)
-        if USE_NUMBA_KERNELS:
-            sub = granular_pitch_shift_numba(mono, pitch_buf, pitch_buf.shape[0], pitch_write_idx,
-                                             rpos0, rpos1, cnt0, cnt1, hann_win, GRAIN_SIZE, HOP, PITCH_RATIO, next_grain_trigger)
-        else:
-            sub = granular_pitch_shift_py(mono)
-        out_l = dry * mono + subg * sub
-        out_r = out_l.copy()
+        out_l = combined.copy()
+        out_r = combined.copy()
+        # Standard Effects Chain (SVF, Octaver)
+        if not EFFECTS_BYPASS.get("env_filter", True):
+            base = EFFECT_PARAMS.get("svf_base_cutoff", 1000.0)
+            depth = EFFECT_PARAMS.get("svf_env_depth", 0.0)
+            q = EFFECT_PARAMS.get("svf_q", 0.8)
+            if USE_NUMBA_KERNELS:
+                out_l = svf_process_block_numba(out_l, svf_lp_l, svf_bp_l, svf_env_l, float(base), float(depth), float(q), float(SAMPLERATE))
+                out_r = svf_process_block_numba(out_r, svf_lp_r, svf_bp_r, svf_env_r, float(base), float(depth), float(q), float(SAMPLERATE))
+            else:
+                out_l = svf_process_block_py(out_l, svf_state_l, base, depth, q)
+                out_r = svf_process_block_py(out_r, svf_state_r, base, depth, q)
+
+        if not EFFECTS_BYPASS.get("octaver", True):
+            dry = EFFECT_PARAMS.get("oct_dry", 1.0)
+            subg = EFFECT_PARAMS.get("oct_sub_gain", 0.0)
+            mono = 0.5 * (out_l + out_r)
+            if USE_NUMBA_KERNELS:
+                sub = granular_pitch_shift_numba(mono, pitch_buf, pitch_buf.shape[0], pitch_write_idx,
+                                                 rpos0, rpos1, cnt0, cnt1, hann_win, GRAIN_SIZE, HOP, PITCH_RATIO, next_grain_trigger)
+            else:
+                sub = granular_pitch_shift_py(mono)
+            out_l = dry * mono + subg * sub
+            out_r = out_l.copy()
 
     # Compressor
     if not EFFECTS_BYPASS.get("comp", True):
@@ -809,6 +942,7 @@ def get_full_state(force_full_update=False):
     }
     state.update(EFFECT_PARAMS)
     state.update(EFFECTS_BYPASS)
+    state['acoustic_mode'] = ACOUSTIC_MODE_ENABLED
 
     # Octaver mix is derived
     state['oct_mix'] = EFFECT_PARAMS.get('oct_sub_gain', 0.0)
@@ -818,6 +952,9 @@ def get_full_state(force_full_update=False):
     state['p2_type'] = INSTR_MODEL['pickup_types'][1]
     state['p1_dist'] = INSTR_MODEL['closest_distance_mm_per_pickup'][0]
     state['p2_dist'] = INSTR_MODEL['closest_distance_mm_per_pickup'][1]
+
+    # Add available acoustic presets for the UI dropdown
+    state['acoustic_model_presets'] = list(ACOUSTIC_MODEL_PRESETS.keys())
 
     if force_full_update:
         user_presets = sorted([p.stem for p in PRESET_DIR.glob("*.json") if p.is_file() and p.parent==PRESET_DIR])
@@ -838,7 +975,10 @@ def update_effects_params(data):
     param = data.get("param")
     value = data.get("value")
     if param in EFFECT_PARAMS:
-        EFFECT_PARAMS[param] = float(value)
+        if isinstance(value, str):
+            EFFECT_PARAMS[param] = value
+        else:
+            EFFECT_PARAMS[param] = float(value)
     elif param == 'oct_mix': # Special handling for oct_mix slider
         EFFECT_PARAMS['oct_dry'] = 1.0 - float(value)
         EFFECT_PARAMS['oct_sub_gain'] = float(value)
@@ -849,6 +989,13 @@ def set_bypass(data):
     state = data.get("state")
     if name in EFFECTS_BYPASS:
         EFFECTS_BYPASS[name] = bool(state)
+    elif name == 'acoustic_mode':
+        global ACOUSTIC_MODE_ENABLED
+        ACOUSTIC_MODE_ENABLED = bool(state)
+        # When enabling acoustic mode, also bypass the other effects
+        if ACOUSTIC_MODE_ENABLED:
+            EFFECTS_BYPASS['env_filter'] = True
+            EFFECTS_BYPASS['octaver'] = True
 
 def set_pickup_distance(data):
     """Update pickup distance and recompute comb delays."""
